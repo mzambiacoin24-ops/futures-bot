@@ -4,6 +4,7 @@ import os
 import base64
 import hmac
 import hashlib
+import json
 
 API_KEY = os.getenv("KUCOIN_KEY")
 API_SECRET = os.getenv("KUCOIN_SECRET")
@@ -17,6 +18,8 @@ BASE_URL = "https://api-futures.kucoin.com"
 LEVERAGE = 20
 trade_active = False
 TOTAL_PROFIT = 0
+
+TARGET_PROFIT = 0.05  # 💰 PROFIT TARGET
 
 COINS = [
 "BTCUSDTM","ETHUSDTM","SOLUSDTM","LINKUSDTM",
@@ -56,12 +59,59 @@ def sign(method, endpoint, body=""):
 def get_price(symbol):
     try:
         r = requests.get(
-            "https://api-futures.kucoin.com/api/v1/ticker",
+            BASE_URL + "/api/v1/ticker",
             params={"symbol": symbol}
         ).json()
         return float(r["data"]["price"])
     except:
         return None
+
+def get_balance():
+    endpoint = "/api/v1/account-overview?currency=USDT"
+    headers = sign("GET", endpoint)
+
+    r = requests.get(BASE_URL + endpoint, headers=headers).json()
+
+    try:
+        return float(r["data"]["availableBalance"])
+    except:
+        return 0
+
+# 🔥 REAL POSITION DATA
+def get_position(symbol):
+    endpoint = "/api/v1/positions"
+    headers = sign("GET", endpoint)
+
+    r = requests.get(BASE_URL + endpoint, headers=headers).json()
+
+    try:
+        for pos in r["data"]:
+            if pos["symbol"] == symbol and float(pos["currentQty"]) != 0:
+                return {
+                    "size": abs(float(pos["currentQty"])),
+                    "entry": float(pos["avgEntryPrice"]),
+                    "pnl": float(pos["unrealisedPnl"])
+                }
+    except:
+        pass
+
+    return None
+
+def place_order(symbol, side, size):
+    endpoint = "/api/v1/orders"
+
+    body = {
+        "symbol": symbol,
+        "side": side,
+        "type": "market",
+        "size": size,
+        "leverage": str(LEVERAGE)
+    }
+
+    body_str = json.dumps(body)
+    headers = sign("POST", endpoint, body_str)
+
+    return requests.post(BASE_URL + endpoint, headers=headers, data=body_str).json()
 
 def find_trade():
     for coin in COINS:
@@ -81,33 +131,6 @@ def find_trade():
 
     return None, None
 
-def get_balance():
-    endpoint = "/api/v1/account-overview?currency=USDT"
-    headers = sign("GET", endpoint)
-
-    r = requests.get(BASE_URL + endpoint, headers=headers).json()
-
-    try:
-        return float(r["data"]["availableBalance"])
-    except:
-        return 0
-
-def place_order(symbol, side, size):
-    endpoint = "/api/v1/orders"
-
-    body = {
-        "symbol": symbol,
-        "side": side,
-        "type": "market",
-        "size": size,
-        "leverage": str(LEVERAGE)
-    }
-
-    body_str = str(body).replace("'", '"')
-    headers = sign("POST", endpoint, body_str)
-
-    return requests.post(BASE_URL + endpoint, headers=headers, data=body_str).json()
-
 def trade():
     global trade_active, TOTAL_PROFIT
 
@@ -115,7 +138,6 @@ def trade():
         return
 
     symbol, side = find_trade()
-
     if symbol is None:
         return
 
@@ -134,11 +156,6 @@ def trade():
 
     trade_active = True
 
-    if side == "buy":
-        tp = price * 1.0005
-    else:
-        tp = price * 0.9995
-
     send(f"""🚀 TRADE START
 
 📊 {symbol}
@@ -149,65 +166,43 @@ def trade():
 📦 Position: ${round(position,2)}
 
 📥 Entry: {round(price,4)}
-🎯 TP: {round(tp,4)}
 
 💵 Total Profit: ${round(TOTAL_PROFIT,4)}
 """)
 
     place_order(symbol, side, size)
 
-    entry = price
-    start_time = time.time()
+    time.sleep(2)  # give exchange time
 
     while True:
-        p = get_price(symbol)
-        if p is None:
+        pos = get_position(symbol)
+
+        if pos is None:
+            time.sleep(1)
             continue
 
-        # minimum hold 10 sec
-        if time.time() - start_time < 10:
-            time.sleep(0.5)
-            continue
+        pnl = pos["pnl"]
 
-        if side == "buy" and p >= tp:
-            place_order(symbol, "sell", size)
-            profit = (tp - entry) * size
-            TOTAL_PROFIT += profit
+        # 🎯 REAL PROFIT TARGET
+        if pnl >= TARGET_PROFIT:
+            close_side = "sell" if side == "buy" else "buy"
+            place_order(symbol, close_side, pos["size"])
+
+            TOTAL_PROFIT += pnl
 
             send(f"""✅ TP HIT
 
-💰 +${round(profit,4)}
+💰 +${round(pnl,4)}
 💵 Total: ${round(TOTAL_PROFIT,4)}
 """)
 
             trade_active = False
             return
 
-        elif side == "sell" and p <= tp:
-            place_order(symbol, "buy", size)
-            profit = (entry - tp) * size
-            TOTAL_PROFIT += profit
-
-            send(f"""✅ TP HIT
-
-💰 +${round(profit,4)}
-💵 Total: ${round(TOTAL_PROFIT,4)}
-""")
-
-            trade_active = False
-            return
-
-        # safety exit after 30 sec
-        if time.time() - start_time > 30:
-            place_order(symbol, "sell" if side == "buy" else "buy", size)
-            send("⚠️ Exit (timeout)")
-            trade_active = False
-            return
-
-        time.sleep(0.5)
+        time.sleep(1)
 
 def main():
-    send("🤖 V23 CONTROLLED SCALPER LIVE 🚀")
+    send("🤖 V24 TRUE REAL BOT LIVE 💰")
 
     while True:
         try:
