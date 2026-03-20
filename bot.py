@@ -4,7 +4,6 @@ import os
 import base64
 import hmac
 import hashlib
-from datetime import datetime
 
 API_KEY = os.getenv("KUCOIN_KEY")
 API_SECRET = os.getenv("KUCOIN_SECRET")
@@ -19,8 +18,8 @@ LEVERAGE = 20
 trade_active = False
 
 COINS = [
-"BTCUSDTM","ETHUSDTM","SOLUSDTM","AVAXUSDTM","LINKUSDTM","ADAUSDTM",
-"XRPUSDTM","DOGEUSDTM","DOTUSDTM","MATICUSDTM","OPUSDTM","ARBUSDTM"
+"BTCUSDTM","ETHUSDTM","SOLUSDTM","LINKUSDTM",
+"AVAXUSDTM","DOGEUSDTM","XRPUSDTM","ADAUSDTM"
 ]
 
 def send(msg):
@@ -63,26 +62,26 @@ def get_price(symbol):
     except:
         return None
 
-# ⚡ FAST SCAN
+# ⚡ ULTRA FAST ENTRY
 def find_trade():
     for coin in COINS:
         p1 = get_price(coin)
-        time.sleep(0.2)
+        time.sleep(0.15)
         p2 = get_price(coin)
-        time.sleep(0.2)
-        p3 = get_price(coin)
 
-        if None in [p1, p2, p3]:
+        if None in [p1, p2]:
             continue
 
-        if p1 < p2 < p3:
+        diff = (p2 - p1) / p1
+
+        # 🔥 micro movement entry
+        if diff > 0.0002:
             return coin, "buy"
-        elif p1 > p2 > p3:
+        elif diff < -0.0002:
             return coin, "sell"
 
     return None, None
 
-# 💰 GET BALANCE
 def get_balance():
     endpoint = "/api/v1/account-overview?currency=USDT"
     headers = sign("GET", endpoint)
@@ -94,7 +93,6 @@ def get_balance():
     except:
         return 0
 
-# 🚀 PLACE ORDER
 def place_order(symbol, side, size):
     endpoint = "/api/v1/orders"
 
@@ -109,8 +107,7 @@ def place_order(symbol, side, size):
     body_str = str(body).replace("'", '"')
     headers = sign("POST", endpoint, body_str)
 
-    r = requests.post(BASE_URL + endpoint, headers=headers, data=body_str)
-    return r.json()
+    return requests.post(BASE_URL + endpoint, headers=headers, data=body_str).json()
 
 def trade():
     global trade_active
@@ -121,47 +118,79 @@ def trade():
     symbol, side = find_trade()
 
     if symbol is None:
-        send("⚡ scanning...")
         return
 
     balance = get_balance()
 
     if balance <= 1:
-        send("⚠️ Low balance")
+        send("⚠️ Balance ndogo")
         return
 
     margin = balance * 0.3
-    size = int(margin * LEVERAGE / get_price(symbol))
+    price = get_price(symbol)
+
+    if price is None:
+        return
+
+    size = int(margin * LEVERAGE / price)
 
     trade_active = True
 
-    send(f"""🚀 REAL TRADE
+    send(f"""⚡ SCALP ENTRY
 
 📊 {symbol}
 📍 {side.upper()}
 
-💰 Margin: ${round(margin,2)}
+💰 ${round(margin,2)}
 ⚡ x{LEVERAGE}
 """)
 
-    res = place_order(symbol, side, size)
+    place_order(symbol, side, size)
 
-    send(f"✅ Order placed")
+    entry = price
 
-    time.sleep(10)
+    # 🎯 ULTRA SMALL TP
+    if side == "buy":
+        tp = entry * 1.0005
+    else:
+        tp = entry * 0.9995
+
+    for i in range(60):
+        p = get_price(symbol)
+        if p is None:
+            continue
+
+        if side == "buy":
+            if p >= tp:
+                place_order(symbol, "sell", size)
+                send(f"💰 TP HIT (+scalp)")
+                trade_active = False
+                return
+        else:
+            if p <= tp:
+                place_order(symbol, "buy", size)
+                send(f"💰 TP HIT (+scalp)")
+                trade_active = False
+                return
+
+        time.sleep(0.5)
+
+    # 🔴 FAST EXIT (no waiting forever)
+    place_order(symbol, "sell" if side == "buy" else "buy", size)
+    send("⚠️ Quick exit")
 
     trade_active = False
 
 def main():
-    send("🤖 V20 REAL BOT LIVE 🚀")
+    send("⚡ V21 ULTRA SCALPER LIVE")
 
     while True:
         try:
             trade()
-            time.sleep(3)
+            time.sleep(1)
         except Exception as e:
             send(f"ERROR: {str(e)}")
-            time.sleep(5)
+            time.sleep(3)
 
 if __name__ == "__main__":
     main()
