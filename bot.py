@@ -6,6 +6,7 @@ import hashlib
 import base64
 from datetime import datetime
 
+# ===== ENV =====
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
@@ -13,8 +14,11 @@ KUCOIN_KEY = os.getenv("KUCOIN_KEY")
 KUCOIN_SECRET = os.getenv("KUCOIN_SECRET")
 KUCOIN_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
 
-BASE_URL = "https://api-futures.kucoin.com"
+# ===== SETTINGS =====
+SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT"]
+LEVERAGE = 20
 
+# ===== TELEGRAM =====
 def send(msg):
     try:
         requests.post(
@@ -24,6 +28,12 @@ def send(msg):
     except:
         pass
 
+# ===== TIME =====
+def trading_time():
+    hour = (datetime.utcnow().hour + 3) % 24
+    return 4 <= hour < 22
+
+# ===== PRICE =====
 def get_price(symbol):
     try:
         r = requests.get(
@@ -34,11 +44,22 @@ def get_price(symbol):
     except:
         return None
 
-def trading_time():
-    hour = (datetime.utcnow().hour + 3) % 24
-    return 4 <= hour < 22
+# ===== SIMPLE TREND =====
+def get_direction(symbol):
+    p1 = get_price(symbol)
+    time.sleep(2)
+    p2 = get_price(symbol)
 
-def trade(symbol, direction, margin):
+    if p2 > p1:
+        return "LONG"
+    else:
+        return "SHORT"
+
+# ===== TRADE ENGINE =====
+def trade(symbol, balance):
+    margin = balance * 0.3  # 30% kutumia
+
+    direction = get_direction(symbol)
     entry = get_price(symbol)
 
     send(f"""🚀 TRADE START
@@ -47,37 +68,50 @@ def trade(symbol, direction, margin):
 📍 {direction}
 
 💰 Margin: ${round(margin,2)}
-⚡ x20
+⚡ x{LEVERAGE}
 
 📥 Entry: {entry}
 """)
 
     hedge_opened = False
 
-    for i in range(30):  # seconds loop
+    for i in range(40):  # ~40 seconds monitoring
         price = get_price(symbol)
 
         if direction == "LONG":
-            pnl = (price - entry)/entry * margin * 20
+            pnl = (price - entry)/entry * margin * LEVERAGE
         else:
-            pnl = (entry - price)/entry * margin * 20
+            pnl = (entry - price)/entry * margin * LEVERAGE
 
-        # 🔥 HEDGE TRIGGER
-        if pnl < -0.03 and not hedge_opened:
+        # 🔥 HEDGE (ikiwa inakosea)
+        if pnl < -0.02 and not hedge_opened:
             hedge_opened = True
-            new_direction = "SHORT" if direction == "LONG" else "LONG"
+            new_dir = "SHORT" if direction == "LONG" else "LONG"
 
-            send(f"""🔁 HEDGE ACTIVATED
+            send(f"""🔁 HEDGE OPEN
 
-Switch to {new_direction}
+Switch → {new_dir}
 """)
+
+        # 🎯 TAKE PROFIT
+        if pnl > 0.05:
+            send(f"""🏁 TAKE PROFIT
+
+Profit: +${round(pnl,2)}
+""")
+            return
 
         time.sleep(1)
 
-    send(f"🏁 CLOSED (monitor end)")
+    send("⏹ EXIT (time end)")
 
+# ===== BALANCE (SIMULATION FOR NOW) =====
+def get_balance():
+    return 4  # unaweza kubadilisha baadaye
+
+# ===== MAIN =====
 def main():
-    send("🤖 V10.9 REAL HEDGE START 🇹🇿")
+    send("🤖 V11 PRO BOT ACTIVE 🚀")
 
     while True:
         try:
@@ -85,11 +119,13 @@ def main():
                 time.sleep(60)
                 continue
 
-            margin = 2  # keep fixed for testing
+            balance = get_balance()
 
-            trade("BTC-USDT", "LONG", margin)
+            for symbol in SYMBOLS:
+                trade(symbol, balance)
+                time.sleep(10)
 
-            time.sleep(60)
+            time.sleep(30)
 
         except Exception as e:
             send(f"🔥 ERROR: {str(e)}")
