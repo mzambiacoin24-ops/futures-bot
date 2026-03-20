@@ -16,6 +16,7 @@ BASE_URL = "https://api-futures.kucoin.com"
 
 LEVERAGE = 20
 trade_active = False
+TOTAL_PROFIT = 0
 
 COINS = [
 "BTCUSDTM","ETHUSDTM","SOLUSDTM","LINKUSDTM",
@@ -62,11 +63,10 @@ def get_price(symbol):
     except:
         return None
 
-# ⚡ ULTRA FAST ENTRY
 def find_trade():
     for coin in COINS:
         p1 = get_price(coin)
-        time.sleep(0.15)
+        time.sleep(0.2)
         p2 = get_price(coin)
 
         if None in [p1, p2]:
@@ -74,7 +74,6 @@ def find_trade():
 
         diff = (p2 - p1) / p1
 
-        # 🔥 micro movement entry
         if diff > 0.0002:
             return coin, "buy"
         elif diff < -0.0002:
@@ -110,7 +109,7 @@ def place_order(symbol, side, size):
     return requests.post(BASE_URL + endpoint, headers=headers, data=body_str).json()
 
 def trade():
-    global trade_active
+    global trade_active, TOTAL_PROFIT
 
     if trade_active:
         return
@@ -121,68 +120,94 @@ def trade():
         return
 
     balance = get_balance()
-
     if balance <= 1:
         send("⚠️ Balance ndogo")
         return
 
-    margin = balance * 0.3
     price = get_price(symbol)
-
     if price is None:
         return
 
-    size = int(margin * LEVERAGE / price)
+    margin = balance * 0.3
+    position = margin * LEVERAGE
+    size = int(position / price)
 
     trade_active = True
 
-    send(f"""⚡ SCALP ENTRY
+    if side == "buy":
+        tp = price * 1.0005
+    else:
+        tp = price * 0.9995
+
+    send(f"""🚀 TRADE START
 
 📊 {symbol}
 📍 {side.upper()}
 
-💰 ${round(margin,2)}
-⚡ x{LEVERAGE}
+💰 Margin: ${round(margin,2)}
+⚡ Leverage: x{LEVERAGE}
+📦 Position: ${round(position,2)}
+
+📥 Entry: {round(price,4)}
+🎯 TP: {round(tp,4)}
+
+💵 Total Profit: ${round(TOTAL_PROFIT,4)}
 """)
 
     place_order(symbol, side, size)
 
     entry = price
+    start_time = time.time()
 
-    # 🎯 ULTRA SMALL TP
-    if side == "buy":
-        tp = entry * 1.0005
-    else:
-        tp = entry * 0.9995
-
-    for i in range(60):
+    while True:
         p = get_price(symbol)
         if p is None:
             continue
 
-        if side == "buy":
-            if p >= tp:
-                place_order(symbol, "sell", size)
-                send(f"💰 TP HIT (+scalp)")
-                trade_active = False
-                return
-        else:
-            if p <= tp:
-                place_order(symbol, "buy", size)
-                send(f"💰 TP HIT (+scalp)")
-                trade_active = False
-                return
+        # minimum hold 10 sec
+        if time.time() - start_time < 10:
+            time.sleep(0.5)
+            continue
+
+        if side == "buy" and p >= tp:
+            place_order(symbol, "sell", size)
+            profit = (tp - entry) * size
+            TOTAL_PROFIT += profit
+
+            send(f"""✅ TP HIT
+
+💰 +${round(profit,4)}
+💵 Total: ${round(TOTAL_PROFIT,4)}
+""")
+
+            trade_active = False
+            return
+
+        elif side == "sell" and p <= tp:
+            place_order(symbol, "buy", size)
+            profit = (entry - tp) * size
+            TOTAL_PROFIT += profit
+
+            send(f"""✅ TP HIT
+
+💰 +${round(profit,4)}
+💵 Total: ${round(TOTAL_PROFIT,4)}
+""")
+
+            trade_active = False
+            return
+
+        # safety exit after 30 sec
+        if time.time() - start_time > 30:
+            place_order(symbol, "sell" if side == "buy" else "buy", size)
+            send("⚠️ Exit (timeout)")
+            trade_active = False
+            return
 
         time.sleep(0.5)
 
-    # 🔴 FAST EXIT (no waiting forever)
-    place_order(symbol, "sell" if side == "buy" else "buy", size)
-    send("⚠️ Quick exit")
-
-    trade_active = False
-
 def main():
-    send("⚡ V21 ULTRA SCALPER LIVE")
+    send("🤖 V23 CONTROLLED SCALPER LIVE 🚀")
 
     while True:
         try:
