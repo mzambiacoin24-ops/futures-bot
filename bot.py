@@ -65,7 +65,6 @@ def get_price(symbol):
 def get_balance():
     endpoint = "/api/v1/account-overview?currency=USDT"
     headers = sign("GET", endpoint)
-
     r = requests.get(BASE_URL + endpoint, headers=headers).json()
 
     try:
@@ -76,7 +75,6 @@ def get_balance():
 def get_position(symbol):
     endpoint = f"/api/v1/position?symbol={symbol}"
     headers = sign("GET", endpoint)
-
     r = requests.get(BASE_URL + endpoint, headers=headers).json()
 
     try:
@@ -94,6 +92,7 @@ def get_position(symbol):
 
     return None
 
+# ✅ ORDER WITH CHECK
 def place_order(symbol, side, size):
     endpoint = "/api/v1/orders"
 
@@ -108,7 +107,14 @@ def place_order(symbol, side, size):
     body_str = json.dumps(body)
     headers = sign("POST", endpoint, body_str)
 
-    return requests.post(BASE_URL + endpoint, headers=headers, data=body_str).json()
+    r = requests.post(BASE_URL + endpoint, headers=headers, data=body_str).json()
+
+    if r.get("code") == "200000":
+        send("✅ ORDER SUCCESS")
+        return True
+    else:
+        send(f"❌ ORDER FAILED: {r}")
+        return False
 
 def find_trade():
     for coin in COINS:
@@ -129,7 +135,7 @@ def find_trade():
     return None, None
 
 def wait_for_position(symbol):
-    for _ in range(15):  # subiri mpaka 15 seconds
+    for _ in range(15):
         pos = get_position(symbol)
         if pos:
             return pos
@@ -157,7 +163,9 @@ def trade():
 
     margin = balance * 0.3
     position_value = margin * LEVERAGE
-    size = int(position_value / price)
+
+    # ✅ FIX SIZE (never 0)
+    size = max(1, int(position_value / price))
 
     trade_active = True
 
@@ -174,9 +182,12 @@ def trade():
 💵 Total Profit: ${round(TOTAL_PROFIT,4)}
 """)
 
-    place_order(symbol, side, size)
+    success = place_order(symbol, side, size)
 
-    # ✅ SUBIRI POSITION
+    if not success:
+        trade_active = False
+        return
+
     pos = wait_for_position(symbol)
 
     if pos is None:
@@ -184,7 +195,7 @@ def trade():
         trade_active = False
         return
 
-    send("✅ Position detected — tracking profit...")
+    send("✅ Position detected — tracking...")
 
     while True:
         pos = get_position(symbol)
@@ -216,7 +227,7 @@ def trade():
         time.sleep(2)
 
 def main():
-    send("🤖 V26 TRUE LIVE BOT ACTIVE 🚀")
+    send("🤖 V27 TRUE EXECUTION BOT ACTIVE 💰")
 
     while True:
         try:
