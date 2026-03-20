@@ -45,12 +45,10 @@ def sign(method, endpoint, body=""):
         "Content-Type": "application/json"
     }
 
-# ===== TIME TZ (FIXED) =====
 def trading_time():
     hour = (datetime.utcnow().hour + 3) % 24
-    return 4 <= hour < 22   # ✅ HAPA NDIO FIX
+    return 4 <= hour < 22
 
-# ===== BALANCE =====
 def get_balance():
     endpoint = "/api/v1/account-overview?currency=USDT"
     headers = sign("GET", endpoint)
@@ -58,25 +56,55 @@ def get_balance():
     try:
         res = requests.get(BASE_URL + endpoint, headers=headers).json()
 
-        send(f"📡 DEBUG:\n{res}")
-
         if res.get("code") != "200000":
             return 0
 
         return float(res["data"]["availableBalance"])
 
-    except Exception as e:
-        send(f"❌ ERROR: {str(e)}")
+    except:
         return 0
 
-# ===== MAIN =====
+def get_price(symbol):
+    try:
+        r = requests.get(
+            "https://api.kucoin.com/api/v1/market/orderbook/level1",
+            params={"symbol": symbol}
+        ).json()
+        return float(r["data"]["price"])
+    except:
+        return None
+
+def trade(symbol, direction, margin):
+    entry = get_price(symbol)
+
+    send(f"""🚀 TRADE START
+
+📊 {symbol}
+📍 {direction}
+
+💰 Margin: ${round(margin,2)}
+⚡ x20
+
+📥 Entry: {entry}
+""")
+
+    time.sleep(5)
+
+    exit_price = get_price(symbol)
+
+    if direction == "LONG":
+        profit = (exit_price - entry)/entry * margin * 20
+    else:
+        profit = (entry - exit_price)/entry * margin * 20
+
+    send(f"🏁 CLOSED +${round(profit,2)}")
+
 def main():
-    send("🤖 V10.5 TZ BOT ACTIVE 🇹🇿🚀")
+    send("🤖 V10.6 LIVE BOT ACTIVE 🇹🇿🚀")
 
     while True:
         try:
             if not trading_time():
-                send("⏰ Outside trading time")
                 time.sleep(60)
                 continue
 
@@ -87,12 +115,17 @@ def main():
                 time.sleep(60)
                 continue
 
-            send(f"💰 BALANCE: ${balance}")
+            margin = balance * 0.5
+
+            coin = "BTC-USDT"
+            direction = "LONG"
+
+            trade(coin, direction, margin)
 
             time.sleep(60)
 
         except Exception as e:
-            send(f"🔥 CRASH: {str(e)}")
+            send(f"🔥 ERROR: {str(e)}")
             time.sleep(10)
 
 if __name__ == "__main__":
