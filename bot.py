@@ -8,8 +8,7 @@ CHAT_ID = os.getenv("CHAT_ID")
 
 SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT"]
 LEVERAGE = 20
-
-DAILY_TARGET = 2  # unaweza badilisha baadaye
+DAILY_TARGET = 2
 
 total_profit = 0
 start_day = datetime.utcnow().day
@@ -30,157 +29,141 @@ def get_price(symbol):
             params={"symbol": symbol},
             timeout=5
         ).json()
-
-        price = r.get("data", {}).get("price", None)
-        if price is None:
-            return None
-
-        return float(price)
-
+        return float(r["data"]["price"])
     except:
         return None
 
-def analyze_market(symbol):
+# 🔥 SMART TREND CHECK (PRO)
+def get_trend(symbol):
     prices = []
 
-    for _ in range(5):
+    for _ in range(6):
         p = get_price(symbol)
         if p is None:
-            return None, None
+            return None
         prices.append(p)
         time.sleep(1)
 
-    move = max(prices) - min(prices)
+    up = all(prices[i] < prices[i+1] for i in range(len(prices)-1))
+    down = all(prices[i] > prices[i+1] for i in range(len(prices)-1))
 
-    if move < 0.05:
-        return None, None
+    move = abs(prices[-1] - prices[0])
 
-    if prices[-1] > prices[0]:
-        return "LONG", move
+    if move < 0.5:  # filter noise
+        return None
+
+    if up:
+        return "LONG"
+    elif down:
+        return "SHORT"
     else:
-        return "SHORT", move
+        return None
 
-def pick_symbol():
-    best_symbol = None
-    best_move = 0
-    best_direction = None
-
+def pick_trade():
     for s in SYMBOLS:
-        direction, move = analyze_market(s)
-
-        if direction is None:
-            continue
-
-        if move > best_move:
-            best_move = move
-            best_symbol = s
-            best_direction = direction
-
-    return best_symbol, best_direction
+        trend = get_trend(s)
+        if trend:
+            return s, trend
+    return None, None
 
 def trade(balance):
     global total_profit
 
-    symbol, direction = pick_symbol()
+    symbol, direction = pick_trade()
 
     if symbol is None:
-        send("⏳ No strong market, waiting...")
-        time.sleep(10)
+        send("⏳ No clean trend, waiting...")
+        time.sleep(15)
         return
 
-    base_margin = balance * 0.3
-    position_size = base_margin * LEVERAGE
+    margin = balance * 0.3
     entry = get_price(symbol)
 
     if entry is None:
         return
+
+    # 🎯 REAL TP CALCULATION
+    if direction == "LONG":
+        tp = entry * 1.0007
+    else:
+        tp = entry * 0.9993
 
     send(f"""🚀 TRADE START
 
 📊 {symbol}
 📍 {direction}
 
-💰 Margin: ${round(base_margin,2)}
+💰 Margin: ${round(margin,2)}
 ⚡ Leverage: x{LEVERAGE}
-📦 Position: ${round(position_size,2)}
 
 📥 Entry: {entry}
+🎯 TP: {round(tp,2)}
+
+💵 Session Profit: ${round(total_profit,3)}
 """)
 
     hedge_open = False
-    hedge_direction = None
+    hedge_dir = None
     hedge_margin = 0
-    peak_profit = 0
 
-    for i in range(180):
+    for i in range(120):
         price = get_price(symbol)
-
         if price is None:
             continue
 
         if direction == "LONG":
-            pnl_main = (price - entry)/entry * base_margin * LEVERAGE
+            pnl = (price - entry)/entry * margin * LEVERAGE
+            tp_hit = price >= tp
         else:
-            pnl_main = (entry - price)/entry * base_margin * LEVERAGE
+            pnl = (entry - price)/entry * margin * LEVERAGE
+            tp_hit = price <= tp
 
-        total_pnl = pnl_main
+        total_pnl = pnl
 
-        if pnl_main < -0.02 and not hedge_open:
+        # 🔁 HEDGE SYSTEM
+        if pnl < -0.03 and not hedge_open:
             hedge_open = True
-            hedge_direction = "SHORT" if direction == "LONG" else "LONG"
-            hedge_margin = base_margin * 2
+            hedge_dir = "SHORT" if direction == "LONG" else "LONG"
+            hedge_margin = margin * 2
 
-            send(f"""🔁 HEDGE ACTIVATED
+            send(f"""🔁 HEDGE ON
 
-Direction → {hedge_direction}
-💰 Hedge Margin: ${round(hedge_margin,2)}
+Direction: {hedge_dir}
+💰 Hedge: ${round(hedge_margin,2)}
 """)
 
         if hedge_open:
-            if hedge_direction == "LONG":
-                pnl_hedge = (price - entry)/entry * hedge_margin * LEVERAGE
+            if hedge_dir == "LONG":
+                hedge_pnl = (price - entry)/entry * hedge_margin * LEVERAGE
             else:
-                pnl_hedge = (entry - price)/entry * hedge_margin * LEVERAGE
+                hedge_pnl = (entry - price)/entry * hedge_margin * LEVERAGE
 
-            total_pnl = pnl_main + pnl_hedge
+            total_pnl = pnl + hedge_pnl
 
         if i % 10 == 0:
             send(f"""📊 STATUS
 
-Main: {round(pnl_main,3)}
-Total: {round(total_pnl,3)}
-💰 Session Profit: ${round(total_profit,3)}
+Price: {price}
+PNL: {round(total_pnl,3)}
+💵 Total Profit: ${round(total_profit,3)}
 """)
 
-        if total_pnl > peak_profit:
-            peak_profit = total_pnl
-
-        # QUICK PROFIT
-        if total_pnl > 0.02:
+        # 🎯 TP HIT
+        if tp_hit:
             total_profit += total_pnl
-            send(f"""🏁 PROFIT LOCKED
+            send(f"""🏁 TP HIT
 
-💰 Trade: +${round(total_pnl,3)}
+💰 Profit: +${round(total_pnl,3)}
 📊 Total: ${round(total_profit,3)}
 """)
             return
 
-        # TRAILING
-        if peak_profit > 0.02 and total_pnl < peak_profit * 0.6:
-            total_profit += total_pnl
-            send(f"""🔒 TRAILING EXIT
-
-💰 Trade: +${round(total_pnl,3)}
-📊 Total: ${round(total_profit,3)}
-""")
-            return
-
-        # STOP LOSS
-        if total_pnl < -0.1:
+        # 🛑 STOP LOSS
+        if total_pnl < -0.15:
             total_profit += total_pnl
             send(f"""🛑 STOP LOSS
 
-Loss: ${round(total_pnl,2)}
+Loss: ${round(total_pnl,3)}
 📊 Total: ${round(total_profit,3)}
 """)
             return
@@ -192,7 +175,7 @@ Loss: ${round(total_pnl,2)}
 def main():
     global total_profit, start_day
 
-    send("🤖 V16 ELITE BOT ACTIVE 🚀")
+    send("🤖 V17 PRO BOT ACTIVE 🚀")
 
     while True:
         try:
@@ -203,7 +186,7 @@ def main():
                 start_day = today
 
             if total_profit >= DAILY_TARGET:
-                send(f"""🛑 DAILY TARGET REACHED
+                send(f"""🛑 TARGET HIT
 
 💰 Total: ${round(total_profit,2)}
 Bot paused
@@ -219,7 +202,7 @@ Bot paused
 
             trade(balance)
 
-            time.sleep(20)
+            time.sleep(15)
 
         except Exception as e:
             send(f"🔥 ERROR: {str(e)}")
