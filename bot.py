@@ -6,7 +6,6 @@ import hashlib
 import base64
 from datetime import datetime
 
-# ===== ENV =====
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
@@ -16,7 +15,6 @@ KUCOIN_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
 
 BASE_URL = "https://api-futures.kucoin.com"
 
-# ===== TELEGRAM =====
 def send(msg):
     try:
         requests.post(
@@ -26,17 +24,25 @@ def send(msg):
     except:
         pass
 
-# ===== SIGN (FIXED) =====
 def sign(method, endpoint, body=""):
     now = str(int(time.time() * 1000))
+
     str_to_sign = now + method + endpoint + body
 
     signature = base64.b64encode(
-        hmac.new(KUCOIN_SECRET.encode(), str_to_sign.encode(), hashlib.sha256).digest()
+        hmac.new(
+            KUCOIN_SECRET.encode("utf-8"),
+            str_to_sign.encode("utf-8"),
+            hashlib.sha256
+        ).digest()
     ).decode()
 
     passphrase = base64.b64encode(
-        hmac.new(KUCOIN_SECRET.encode(), KUCOIN_PASSPHRASE.encode(), hashlib.sha256).digest()
+        hmac.new(
+            KUCOIN_SECRET.encode("utf-8"),
+            KUCOIN_PASSPHRASE.encode("utf-8"),
+            hashlib.sha256
+        ).digest()
     ).decode()
 
     return {
@@ -48,26 +54,24 @@ def sign(method, endpoint, body=""):
         "Content-Type": "application/json"
     }
 
-# ===== FUTURES BALANCE =====
 def get_balance():
     endpoint = "/api/v1/account-overview?currency=USDT"
     headers = sign("GET", endpoint)
 
     try:
         res = requests.get(BASE_URL + endpoint, headers=headers).json()
-        print("API RESPONSE:", res)
 
-        if "data" in res:
-            return float(res["data"]["availableBalance"])
-        else:
-            send(f"⚠️ API ERROR: {res}")
+        if res.get("code") != "200000":
+            send(f"❌ API FAIL: {res}")
             return 0
 
+        balance = float(res["data"]["availableBalance"])
+        return balance
+
     except Exception as e:
-        send(f"❌ ERROR: {str(e)}")
+        send(f"🔥 ERROR: {str(e)}")
         return 0
 
-# ===== PRICE =====
 def get_price(symbol):
     try:
         r = requests.get(
@@ -78,12 +82,10 @@ def get_price(symbol):
     except:
         return None
 
-# ===== TIME TZ =====
 def trading_time():
     hour = (datetime.utcnow().hour + 3) % 24
     return 4 <= hour < 16
 
-# ===== TRADE (SIMULATION) =====
 def trade(symbol, direction, margin):
     entry = get_price(symbol)
 
@@ -109,9 +111,8 @@ def trade(symbol, direction, margin):
 
     send(f"🏁 CLOSED +${round(profit,2)}")
 
-# ===== MAIN =====
 def main():
-    send("🤖 V10.1 Futures Bot Active 🚀")
+    send("🤖 V10.2 Futures Bot Active 🚀")
 
     while True:
         try:
