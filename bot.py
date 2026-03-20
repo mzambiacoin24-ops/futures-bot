@@ -21,6 +21,7 @@ COINS = [
 
 total_profit = 0
 start_day = datetime.utcnow().day
+trade_active = False  # 🔒 muhimu sana
 
 def send(msg):
     try:
@@ -42,7 +43,6 @@ def get_price(symbol):
     except:
         return None
 
-# ⚡ FAST TREND CHECK
 def quick_analyze(symbol):
     p1 = get_price(symbol)
     time.sleep(0.2)
@@ -65,29 +65,30 @@ def quick_analyze(symbol):
     else:
         return None
 
-# ⚡ REAL-TIME PICK
 def find_trade():
     for coin in COINS:
         direction = quick_analyze(coin)
-
         if direction:
             return coin, direction
-
     return None, None
 
 def trade(balance):
-    global total_profit
+    global total_profit, trade_active
+
+    trade_active = True  # 🔒 start lock
 
     symbol, direction = find_trade()
 
     if symbol is None:
-        send("⚡ scanning fast...")
+        send("⚡ scanning...")
+        trade_active = False
         return
 
     margin = balance * 0.3
     entry = get_price(symbol)
 
     if entry is None:
+        trade_active = False
         return
 
     if direction == "LONG":
@@ -124,19 +125,24 @@ def trade(balance):
         if tp_hit:
             total_profit += pnl
             send(f"🏁 TP HIT +${round(pnl,3)} | Total ${round(total_profit,3)}")
+            trade_active = False
             return
 
         if pnl < -0.1:
             total_profit += pnl
             send(f"🛑 STOP LOSS ${round(pnl,3)} | Total ${round(total_profit,3)}")
+            trade_active = False
             return
 
         time.sleep(1)
 
-def main():
-    global total_profit, start_day
+    send("⏹ EXIT")
+    trade_active = False
 
-    send("🤖 V18.3 REAL-TIME BOT ACTIVE 🚀")
+def main():
+    global total_profit, start_day, trade_active
+
+    send("🤖 V18.4 SAFE MODE ACTIVE 🚀")
 
     while True:
         try:
@@ -151,11 +157,14 @@ def main():
                 time.sleep(3600)
                 continue
 
-            balance = 4
+            if trade_active:
+                time.sleep(2)
+                continue
 
+            balance = 4
             trade(balance)
 
-            time.sleep(3)  # ⚡ FAST LOOP
+            time.sleep(2)
 
         except Exception as e:
             send(f"🔥 ERROR: {str(e)}")
