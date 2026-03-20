@@ -15,8 +15,6 @@ KUCOIN_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
 
 BASE_URL = "https://api-futures.kucoin.com"
 
-active_trade = False  # 🔥 muhimu kwa hedging
-
 def send(msg):
     try:
         requests.post(
@@ -25,42 +23,6 @@ def send(msg):
         )
     except:
         pass
-
-def sign(method, endpoint, body=""):
-    now = str(int(time.time() * 1000))
-    str_to_sign = now + method + endpoint + body
-
-    signature = base64.b64encode(
-        hmac.new(KUCOIN_SECRET.encode(), str_to_sign.encode(), hashlib.sha256).digest()
-    ).decode()
-
-    passphrase = base64.b64encode(
-        hmac.new(KUCOIN_SECRET.encode(), KUCOIN_PASSPHRASE.encode(), hashlib.sha256).digest()
-    ).decode()
-
-    return {
-        "KC-API-KEY": KUCOIN_KEY,
-        "KC-API-SIGN": signature,
-        "KC-API-TIMESTAMP": now,
-        "KC-API-PASSPHRASE": passphrase,
-        "KC-API-KEY-VERSION": "2",
-        "Content-Type": "application/json"
-    }
-
-def trading_time():
-    hour = (datetime.utcnow().hour + 3) % 24
-    return 4 <= hour < 22
-
-def get_balance():
-    endpoint = "/api/v1/account-overview?currency=USDT"
-    headers = sign("GET", endpoint)
-    try:
-        res = requests.get(BASE_URL + endpoint, headers=headers).json()
-        if res.get("code") != "200000":
-            return 0
-        return float(res["data"]["availableBalance"])
-    except:
-        return 0
 
 def get_price(symbol):
     try:
@@ -72,10 +34,11 @@ def get_price(symbol):
     except:
         return None
 
-def trade(symbol, direction, margin):
-    global active_trade
-    active_trade = True
+def trading_time():
+    hour = (datetime.utcnow().hour + 3) % 24
+    return 4 <= hour < 22
 
+def trade(symbol, direction, margin):
     entry = get_price(symbol)
 
     send(f"""🚀 TRADE START
@@ -89,21 +52,32 @@ def trade(symbol, direction, margin):
 📥 Entry: {entry}
 """)
 
-    time.sleep(30)
+    hedge_opened = False
 
-    exit_price = get_price(symbol)
+    for i in range(30):  # seconds loop
+        price = get_price(symbol)
 
-    if direction == "LONG":
-        profit = (exit_price - entry)/entry * margin * 20
-    else:
-        profit = (entry - exit_price)/entry * margin * 20
+        if direction == "LONG":
+            pnl = (price - entry)/entry * margin * 20
+        else:
+            pnl = (entry - price)/entry * margin * 20
 
-    send(f"🏁 CLOSED +${round(profit,2)}")
+        # 🔥 HEDGE TRIGGER
+        if pnl < -0.03 and not hedge_opened:
+            hedge_opened = True
+            new_direction = "SHORT" if direction == "LONG" else "LONG"
 
-    active_trade = False  # 🔥 trade imeisha
+            send(f"""🔁 HEDGE ACTIVATED
+
+Switch to {new_direction}
+""")
+
+        time.sleep(1)
+
+    send(f"🏁 CLOSED (monitor end)")
 
 def main():
-    send("🤖 V10.8 HEDGE BASE BOT ACTIVE 🇹🇿")
+    send("🤖 V10.9 REAL HEDGE START 🇹🇿")
 
     while True:
         try:
@@ -111,22 +85,11 @@ def main():
                 time.sleep(60)
                 continue
 
-            if active_trade:
-                time.sleep(5)
-                continue
+            margin = 2  # keep fixed for testing
 
-            balance = get_balance()
-
-            if balance <= 1:
-                time.sleep(60)
-                continue
-
-            margin = balance * 0.5
-
-            # 👇 bado LONG kwa sasa (hatujafanya hedge bado)
             trade("BTC-USDT", "LONG", margin)
 
-            time.sleep(5)
+            time.sleep(60)
 
         except Exception as e:
             send(f"🔥 ERROR: {str(e)}")
