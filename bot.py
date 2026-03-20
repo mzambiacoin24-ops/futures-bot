@@ -6,9 +6,19 @@ from datetime import datetime
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT"]
 LEVERAGE = 20
 DAILY_TARGET = 2
+
+# 🔥 40+ COINS (ALTCOIN HUNTER)
+COINS = [
+"BTC-USDT","ETH-USDT","SOL-USDT","AVAX-USDT","LINK-USDT","ADA-USDT","XRP-USDT",
+"DOGE-USDT","DOT-USDT","MATIC-USDT","OP-USDT","ARB-USDT","APT-USDT","SUI-USDT",
+"SEI-USDT","INJ-USDT","NEAR-USDT","FTM-USDT","ATOM-USDT","FIL-USDT",
+"AAVE-USDT","RNDR-USDT","GALA-USDT","SAND-USDT","APE-USDT","LDO-USDT",
+"UNI-USDT","CRV-USDT","DYDX-USDT","BLUR-USDT","PEPE-USDT","BONK-USDT",
+"SHIB-USDT","FLOKI-USDT","ORDI-USDT","TIA-USDT","JTO-USDT","PYTH-USDT",
+"WLD-USDT","ARKM-USDT"
+]
 
 total_profit = 0
 start_day = datetime.utcnow().day
@@ -33,47 +43,59 @@ def get_price(symbol):
     except:
         return None
 
-# 🔥 SMART TREND CHECK (PRO)
-def get_trend(symbol):
+# 🔥 TREND + STRENGTH DETECTOR
+def analyze(symbol):
     prices = []
 
-    for _ in range(6):
+    for _ in range(5):
         p = get_price(symbol)
         if p is None:
-            return None
+            return None, None
         prices.append(p)
-        time.sleep(1)
+        time.sleep(0.5)
+
+    move = abs(prices[-1] - prices[0])
 
     up = all(prices[i] < prices[i+1] for i in range(len(prices)-1))
     down = all(prices[i] > prices[i+1] for i in range(len(prices)-1))
 
-    move = abs(prices[-1] - prices[0])
-
-    if move < 0.5:  # filter noise
-        return None
+    if move < prices[0] * 0.001:  # filter weak coins
+        return None, None
 
     if up:
-        return "LONG"
+        return "LONG", move
     elif down:
-        return "SHORT"
+        return "SHORT", move
     else:
-        return None
+        return None, None
 
-def pick_trade():
-    for s in SYMBOLS:
-        trend = get_trend(s)
-        if trend:
-            return s, trend
-    return None, None
+# 🔥 BEST COIN PICKER
+def pick_best():
+    best_symbol = None
+    best_move = 0
+    best_direction = None
+
+    for coin in COINS:
+        direction, move = analyze(coin)
+
+        if direction is None:
+            continue
+
+        if move > best_move:
+            best_move = move
+            best_symbol = coin
+            best_direction = direction
+
+    return best_symbol, best_direction
 
 def trade(balance):
     global total_profit
 
-    symbol, direction = pick_trade()
+    symbol, direction = pick_best()
 
     if symbol is None:
-        send("⏳ No clean trend, waiting...")
-        time.sleep(15)
+        send("⏳ No strong coin found...")
+        time.sleep(10)
         return
 
     margin = balance * 0.3
@@ -82,24 +104,26 @@ def trade(balance):
     if entry is None:
         return
 
-    # 🎯 REAL TP CALCULATION
+    # 🎯 TP (adaptive)
     if direction == "LONG":
-        tp = entry * 1.0007
+        tp = entry * 1.001
     else:
-        tp = entry * 0.9993
+        tp = entry * 0.999
 
     send(f"""🚀 TRADE START
 
 📊 {symbol}
+🔥 Strong Trend
+
 📍 {direction}
 
 💰 Margin: ${round(margin,2)}
-⚡ Leverage: x{LEVERAGE}
+⚡ x{LEVERAGE}
 
 📥 Entry: {entry}
-🎯 TP: {round(tp,2)}
+🎯 TP: {round(tp,4)}
 
-💵 Session Profit: ${round(total_profit,3)}
+💵 Total Profit: ${round(total_profit,3)}
 """)
 
     hedge_open = False
@@ -120,7 +144,7 @@ def trade(balance):
 
         total_pnl = pnl
 
-        # 🔁 HEDGE SYSTEM
+        # 🔁 HEDGE
         if pnl < -0.03 and not hedge_open:
             hedge_open = True
             hedge_dir = "SHORT" if direction == "LONG" else "LONG"
@@ -129,7 +153,7 @@ def trade(balance):
             send(f"""🔁 HEDGE ON
 
 Direction: {hedge_dir}
-💰 Hedge: ${round(hedge_margin,2)}
+💰 ${round(hedge_margin,2)}
 """)
 
         if hedge_open:
@@ -143,9 +167,9 @@ Direction: {hedge_dir}
         if i % 10 == 0:
             send(f"""📊 STATUS
 
-Price: {price}
+{symbol}
 PNL: {round(total_pnl,3)}
-💵 Total Profit: ${round(total_profit,3)}
+💰 Total: ${round(total_profit,3)}
 """)
 
         # 🎯 TP HIT
@@ -153,7 +177,7 @@ PNL: {round(total_pnl,3)}
             total_profit += total_pnl
             send(f"""🏁 TP HIT
 
-💰 Profit: +${round(total_pnl,3)}
+💰 +${round(total_pnl,3)}
 📊 Total: ${round(total_profit,3)}
 """)
             return
@@ -170,12 +194,12 @@ Loss: ${round(total_pnl,3)}
 
         time.sleep(1)
 
-    send("⏹ EXIT (timeout)")
+    send("⏹ EXIT")
 
 def main():
     global total_profit, start_day
 
-    send("🤖 V17 PRO BOT ACTIVE 🚀")
+    send("🤖 V18 SCANNER PRO ACTIVE 🚀")
 
     while True:
         try:
@@ -188,17 +212,12 @@ def main():
             if total_profit >= DAILY_TARGET:
                 send(f"""🛑 TARGET HIT
 
-💰 Total: ${round(total_profit,2)}
-Bot paused
+💰 ${round(total_profit,2)}
 """)
                 time.sleep(3600)
                 continue
 
             balance = 4
-
-            if balance < 1:
-                time.sleep(60)
-                continue
 
             trade(balance)
 
