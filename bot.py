@@ -16,9 +16,9 @@ CHAT_ID = os.getenv("CHAT_ID")
 BASE_URL = "https://api-futures.kucoin.com"
 
 LEVERAGE = 20
-trade_active = False
-TOTAL_PROFIT = 0
 TARGET_PROFIT = 0.05
+TOTAL_PROFIT = 0
+trade_active = False
 
 COINS = [
 "BTCUSDTM","ETHUSDTM","SOLUSDTM","LINKUSDTM",
@@ -73,7 +73,6 @@ def get_balance():
     except:
         return 0
 
-# ✅ FIXED POSITION READER
 def get_position(symbol):
     endpoint = f"/api/v1/position?symbol={symbol}"
     headers = sign("GET", endpoint)
@@ -129,6 +128,14 @@ def find_trade():
 
     return None, None
 
+def wait_for_position(symbol):
+    for _ in range(15):  # subiri mpaka 15 seconds
+        pos = get_position(symbol)
+        if pos:
+            return pos
+        time.sleep(1)
+    return None
+
 def trade():
     global trade_active, TOTAL_PROFIT
 
@@ -164,22 +171,32 @@ def trade():
 📦 Position: ${round(position_value,2)}
 
 📥 Entry: {round(price,4)}
-
 💵 Total Profit: ${round(TOTAL_PROFIT,4)}
 """)
 
     place_order(symbol, side, size)
 
-    time.sleep(3)
+    # ✅ SUBIRI POSITION
+    pos = wait_for_position(symbol)
+
+    if pos is None:
+        send("❌ Position haijapatikana")
+        trade_active = False
+        return
+
+    send("✅ Position detected — tracking profit...")
 
     while True:
         pos = get_position(symbol)
 
         if pos is None:
-            time.sleep(1)
-            continue
+            send("⚠️ Position imefungwa")
+            trade_active = False
+            return
 
         pnl = pos["pnl"]
+
+        send(f"📊 PNL: ${round(pnl,4)}")
 
         if pnl >= TARGET_PROFIT:
             close_side = "sell" if side == "buy" else "buy"
@@ -196,10 +213,10 @@ def trade():
             trade_active = False
             return
 
-        time.sleep(1)
+        time.sleep(2)
 
 def main():
-    send("🤖 V25 REAL BOT CONNECTED 🚀")
+    send("🤖 V26 TRUE LIVE BOT ACTIVE 🚀")
 
     while True:
         try:
