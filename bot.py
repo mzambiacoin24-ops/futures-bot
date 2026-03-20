@@ -22,7 +22,6 @@ price_cache = {}
 last_trade_time = 0
 in_trade = False
 
-# TELEGRAM
 def send(msg):
     try:
         requests.post(f"{URL}/sendMessage", data={
@@ -32,7 +31,6 @@ def send(msg):
     except:
         pass
 
-# PRICE
 def get_price(symbol):
     try:
         res = requests.get(
@@ -43,7 +41,6 @@ def get_price(symbol):
     except:
         return None
 
-# HISTORY
 def update_history(symbol, price):
     if symbol not in price_history:
         price_history[symbol] = []
@@ -53,18 +50,15 @@ def update_history(symbol, price):
     if len(price_history[symbol]) > 6:
         price_history[symbol].pop(0)
 
-# CANDLE LOGIC
 def get_signal(symbol):
     h = price_history.get(symbol, [])
 
     if len(h) < 6:
         return None
 
-    # movement direction
     up = all(h[i] < h[i+1] for i in range(4))
     down = all(h[i] > h[i+1] for i in range(4))
 
-    # body strength
     body = abs(h[-1] - h[-2])
     prev_body = abs(h[-2] - h[-3])
 
@@ -76,7 +70,6 @@ def get_signal(symbol):
 
     return None
 
-# SCANNER
 def get_best_coin():
     best_coin = None
     best_move = 0
@@ -100,7 +93,6 @@ def get_best_coin():
 
     return best_coin
 
-# TRADE
 def trade(symbol, direction):
     global last_trade_time, in_trade
 
@@ -143,21 +135,31 @@ def trade(symbol, direction):
         if profit > peak_profit:
             peak_profit = profit
 
-        # PROFIT LOCK
-        if peak_profit > 0.03 and profit < peak_profit * 0.5:
-            send(f"🔒 PROFIT LOCK +${round(profit,2)}")
-            break
+        # 🔥 TRAILING LOCK (LOOSE)
+        if peak_profit > 0.04:
+            lock_level = peak_profit * 0.6
+            if profit < lock_level:
+                send(f"""🔒 TRAILING EXIT
+
+📊 {symbol}
+💰 Profit: +${round(profit,2)}
+""")
+                break
 
         # HARD TP
-        if profit > 0.1:
-            send(f"🎯 TP HIT +${round(profit,2)}")
+        if profit > 0.2:
+            send(f"""🎯 BIG TP HIT
+
+📊 {symbol}
+💰 Profit: +${round(profit,2)}
+""")
             break
 
         # HEDGE
         if profit < -0.03:
 
             if hedge >= MAX_HEDGE:
-                send(f"🛑 EXIT LOSS ${round(profit,2)}")
+                send(f"""🛑 EXIT LOSS ${round(profit,2)}""")
                 break
 
             hedge += 1
@@ -179,9 +181,8 @@ def trade(symbol, direction):
     last_trade_time = time.time()
     in_trade = False
 
-# MAIN
 def main():
-    send("🤖 V6 Whale Bot Active 🚀")
+    send("🤖 V6.1 Trailing Bot Active 🚀")
 
     while True:
         now = time.time()
@@ -200,6 +201,5 @@ def main():
 
         time.sleep(1)
 
-# RUN
 if __name__ == "__main__":
     main()
