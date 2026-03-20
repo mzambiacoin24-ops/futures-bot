@@ -26,23 +26,14 @@ def send(msg):
 
 def sign(method, endpoint, body=""):
     now = str(int(time.time() * 1000))
-
     str_to_sign = now + method + endpoint + body
 
     signature = base64.b64encode(
-        hmac.new(
-            KUCOIN_SECRET.encode("utf-8"),
-            str_to_sign.encode("utf-8"),
-            hashlib.sha256
-        ).digest()
+        hmac.new(KUCOIN_SECRET.encode(), str_to_sign.encode(), hashlib.sha256).digest()
     ).decode()
 
     passphrase = base64.b64encode(
-        hmac.new(
-            KUCOIN_SECRET.encode("utf-8"),
-            KUCOIN_PASSPHRASE.encode("utf-8"),
-            hashlib.sha256
-        ).digest()
+        hmac.new(KUCOIN_SECRET.encode(), KUCOIN_PASSPHRASE.encode(), hashlib.sha256).digest()
     ).decode()
 
     return {
@@ -61,15 +52,16 @@ def get_balance():
     try:
         res = requests.get(BASE_URL + endpoint, headers=headers).json()
 
+        # 🔥 DEBUG FULL RESPONSE
+        send(f"📡 DEBUG RESPONSE:\n{res}")
+
         if res.get("code") != "200000":
-            send(f"❌ API FAIL: {res}")
             return 0
 
-        balance = float(res["data"]["availableBalance"])
-        return balance
+        return float(res["data"]["availableBalance"])
 
     except Exception as e:
-        send(f"🔥 ERROR: {str(e)}")
+        send(f"❌ ERROR: {str(e)}")
         return 0
 
 def get_price(symbol):
@@ -86,33 +78,8 @@ def trading_time():
     hour = (datetime.utcnow().hour + 3) % 24
     return 4 <= hour < 16
 
-def trade(symbol, direction, margin):
-    entry = get_price(symbol)
-
-    send(f"""🚀 TRADE START
-
-📊 {symbol}
-📍 {direction}
-
-💰 Margin: ${round(margin,2)}
-⚡ x20
-
-📥 Entry: {entry}
-""")
-
-    time.sleep(5)
-
-    exit_price = get_price(symbol)
-
-    if direction == "LONG":
-        profit = (exit_price - entry)/entry * margin * 20
-    else:
-        profit = (entry - exit_price)/entry * margin * 20
-
-    send(f"🏁 CLOSED +${round(profit,2)}")
-
 def main():
-    send("🤖 V10.2 Futures Bot Active 🚀")
+    send("🤖 V10.3 DEBUG BOT ACTIVE 🚀")
 
     while True:
         try:
@@ -123,18 +90,11 @@ def main():
             balance = get_balance()
 
             if balance <= 1:
-                send(f"⚠️ No futures balance (${balance})")
+                send(f"⚠️ No balance detected: ${balance}")
                 time.sleep(60)
                 continue
 
-            send(f"💰 Futures Balance: ${round(balance,2)}")
-
-            margin = balance * 0.5
-
-            coin = "BTC-USDT"
-            direction = "LONG"
-
-            trade(coin, direction, margin)
+            send(f"💰 BALANCE OK: ${balance}")
 
             time.sleep(60)
 
