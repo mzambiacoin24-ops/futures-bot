@@ -1,214 +1,135 @@
 import requests
 import time
 import os
+import hmac
+import hashlib
+import base64
 from datetime import datetime
 
+# ===== ENV =====
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-URL = f"https://api.telegram.org/bot{TOKEN}"
+KUCOIN_KEY = os.getenv("KUCOIN_KEY")
+KUCOIN_SECRET = os.getenv("KUCOIN_SECRET")
+KUCOIN_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
 
-COINS = [
-    "BTC-USDT","ETH-USDT","SOL-USDT",
-    "XRP-USDT","ADA-USDT","DOGE-USDT",
-    "AVAX-USDT","LINK-USDT"
-]
+BASE_URL = "https://api.kucoin.com"
 
-LEVERAGE = 20
-MAX_HEDGE = 2
-
-price_history = {}
-price_cache = {}
-
-in_trade = False
-last_trade_time = 0
-
-daily_profit = 0
-current_day = datetime.utcnow().day  # use UTC base
-
-# ===== SEND =====
+# ===== TELEGRAM =====
 def send(msg):
     try:
-        requests.post(f"{URL}/sendMessage",
+        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage",
                       data={"chat_id": CHAT_ID, "text": msg})
     except:
         pass
 
-# ===== RESET =====
-def reset_day():
-    global daily_profit, current_day
-    tz_day = (datetime.utcnow().hour + 3) // 24 + datetime.utcnow().day
-    if tz_day != current_day:
-        current_day = tz_day
-        daily_profit = 0
-        send("🔄 New Day — Reset Done (TZ)")
+# ===== SIGN =====
+def sign(method, endpoint, body=""):
+    now = str(int(time.time() * 1000))
+    str_to_sign = now + method + endpoint + body
 
-# ===== TIME (TZ) =====
-def trading_time():
-    hour = (datetime.utcnow().hour + 3) % 24
-    return 4 <= hour < 16
+    signature = base64.b64encode(
+        hmac.new(KUCOIN_SECRET.encode(), str_to_sign.encode(), hashlib.sha256).digest()
+    ).decode()
+
+    passphrase = base64.b64encode(
+        hmac.new(KUCOIN_SECRET.encode(), KUCOIN_PASSPHRASE.encode(), hashlib.sha256).digest()
+    ).decode()
+
+    headers = {
+        "KC-API-KEY": KUCOIN_KEY,
+        "KC-API-SIGN": signature,
+        "KC-API-TIMESTAMP": now,
+        "KC-API-PASSPHRASE": passphrase,
+        "KC-API-KEY-VERSION": "2"
+    }
+
+    return headers
+
+# ===== BALANCE =====
+def get_balance():
+    endpoint = "/api/v1/accounts"
+    headers = sign("GET", endpoint)
+
+    try:
+        res = requests.get(BASE_URL + endpoint, headers=headers).json()
+        for acc in res["data"]:
+            if acc["currency"] == "USDT":
+                return float(acc["available"])
+    except:
+        return 0
+
+    return 0
 
 # ===== PRICE =====
 def get_price(symbol):
     try:
         r = requests.get(
-            "https://api.kucoin.com/api/v1/market/orderbook/level1",
+            BASE_URL + "/api/v1/market/orderbook/level1",
             params={"symbol": symbol}
         ).json()
         return float(r["data"]["price"])
     except:
         return None
 
-# ===== HISTORY =====
-def update_history(symbol, price):
-    if symbol not in price_history:
-        price_history[symbol] = []
-    price_history[symbol].append(price)
-    if len(price_history[symbol]) > 5:
-        price_history[symbol].pop(0)
+# ===== TIME TZ =====
+def trading_time():
+    hour = (datetime.utcnow().hour + 3) % 24
+    return 4 <= hour < 16
 
-# ===== SIGNAL =====
-def get_signal(symbol):
-    h = price_history.get(symbol, [])
-    if len(h) < 4:
-        return None
-
-    up = h[0] < h[1] < h[2] < h[3]
-    down = h[0] > h[1] > h[2] > h[3]
-
-    if up:
-        return "LONG"
-    if down:
-        return "SHORT"
-
-    return None
-
-# ===== SCAN =====
-def get_best_coin():
-    best = None
-    best_move = 0
-
-    for coin in COINS:
-        price = get_price(coin)
-        if not price:
-            continue
-
-        update_history(coin, price)
-
-        if coin in price_cache:
-            prev = price_cache[coin]
-            move = abs((price - prev) / prev)
-
-            if move > 0.0003 and move > best_move:
-                best_move = move
-                best = coin
-
-        price_cache[coin] = price
-
-    return best
-
-# ===== TRADE =====
-def trade(symbol, direction, margin, daily_target):
-    global in_trade, daily_profit
-
-    in_trade = True
-
+# ===== TRADE (SIMULATED EXECUTION FOR NOW) =====
+def trade(symbol, direction, margin):
     entry = get_price(symbol)
-    hedge = 0
-    peak = 0
 
-    send(f"""🚀 TRADE START
+    send(f"""🚀 LIVE TRADE
 
 📊 {symbol}
 📍 {direction}
 
 💰 Margin: ${round(margin,2)}
-⚡ x{LEVERAGE}
+⚡ x20
 
-📥 Entry: {round(entry,2)}
+📥 Entry: {entry}
 """)
 
-    while True:
-        price = get_price(symbol)
-        if not price:
-            continue
+    time.sleep(5)
 
-        position = margin * LEVERAGE
+    exit_price = get_price(symbol)
 
-        if direction == "LONG":
-            profit = (price - entry)/entry * position
-        else:
-            profit = (entry - price)/entry * position
+    if direction == "LONG":
+        profit = (exit_price - entry)/entry * margin * 20
+    else:
+        profit = (entry - exit_price)/entry * margin * 20
 
-        if profit > peak:
-            peak = profit
-
-        # 🔒 TRAILING
-        if peak > 0.5:
-            lock = peak * 0.6
-            if profit < lock:
-                send(f"🔒 EXIT +${round(profit,2)}")
-                daily_profit += profit
-                break
-
-        # 🎯 DAILY TARGET
-        if daily_profit + profit >= daily_target:
-            send(f"🏁 TARGET HIT +${round(daily_profit + profit,2)}")
-            daily_profit += profit
-            break
-
-        # 🔁 HEDGE
-        if profit < -1:
-            if hedge >= MAX_HEDGE:
-                send(f"🛑 LOSS ${round(profit,2)}")
-                daily_profit += profit
-                break
-
-            hedge += 1
-            direction = "SHORT" if direction == "LONG" else "LONG"
-            margin += margin * 0.2
-            entry = price
-
-            send(f"""🔁 HEDGE {hedge}
-➡️ {direction}
-💰 Margin: ${round(margin,2)}
-""")
-
-        time.sleep(1)
-
-    in_trade = False
+    send(f"🏁 CLOSED +${round(profit,2)}")
 
 # ===== MAIN =====
 def main():
-    send("🤖 V8 TZ Bot Active 🇹🇿🚀")
+    send("🤖 V9 KuCoin Bot Active 🚀")
 
     while True:
-        reset_day()
-
         if not trading_time():
             time.sleep(30)
             continue
 
-        if in_trade:
-            time.sleep(1)
-            continue
+        balance = get_balance()
 
-        balance = 100  # demo balance
-        margin = balance * 0.5
-        daily_target = margin * 0.5
-
-        if daily_profit >= daily_target:
+        if balance <= 1:
+            send(f"⚠️ No balance detected (${balance})")
             time.sleep(60)
             continue
 
-        coin = get_best_coin()
+        send(f"💰 Balance: ${balance}")
 
-        if coin:
-            signal = get_signal(coin)
-            if signal:
-                trade(coin, signal, margin, daily_target)
+        margin = balance * 0.5
 
-        time.sleep(1)
+        coin = "BTC-USDT"
+        direction = "LONG"
+
+        trade(coin, direction, margin)
+
+        time.sleep(60)
 
 if __name__ == "__main__":
     main()
