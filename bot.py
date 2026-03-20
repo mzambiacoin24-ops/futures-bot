@@ -1,6 +1,7 @@
 import requests
 import time
 import os
+from datetime import datetime
 
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -18,10 +19,15 @@ LEVERAGE = 20
 COOLDOWN = 5
 MAX_HEDGE = 2
 
+DAILY_TARGET = 25
+
 price_history = {}
 price_cache = {}
 in_trade = False
 last_trade_time = 0
+
+daily_profit = 0
+current_day = datetime.now().day
 
 def send(msg):
     try:
@@ -29,6 +35,15 @@ def send(msg):
                       data={"chat_id": CHAT_ID, "text": msg})
     except:
         pass
+
+def reset_daily():
+    global daily_profit, current_day
+    now_day = datetime.now().day
+
+    if now_day != current_day:
+        current_day = now_day
+        daily_profit = 0
+        send("🔄 New Day Started — Profit Reset")
 
 def get_price(symbol):
     try:
@@ -40,7 +55,6 @@ def get_price(symbol):
     except:
         return None
 
-# ===== HISTORY =====
 def update_history(symbol, price):
     if symbol not in price_history:
         price_history[symbol] = []
@@ -50,7 +64,6 @@ def update_history(symbol, price):
     if len(price_history[symbol]) > 5:
         price_history[symbol].pop(0)
 
-# ===== TREND DETECTION (FAST + CONFIRM) =====
 def get_signal(symbol):
     h = price_history.get(symbol, [])
 
@@ -71,7 +84,6 @@ def get_signal(symbol):
 
     return None
 
-# ===== SMART COIN SCAN =====
 def get_best_coin():
     best = None
     best_move = 0
@@ -95,9 +107,8 @@ def get_best_coin():
 
     return best
 
-# ===== TRADE ENGINE =====
 def trade(symbol, direction):
-    global in_trade, last_trade_time
+    global in_trade, last_trade_time, daily_profit
 
     in_trade = True
 
@@ -137,22 +148,19 @@ def trade(symbol, direction):
         if profit > peak:
             peak = profit
 
-        # 🔒 SMART TRAILING
-        if peak > 0.2:
-            lock = peak * 0.5
+        # 🔒 TRAILING
+        if peak > 0.3:
+            lock = peak * 0.6
             if profit < lock:
                 send(f"🔒 EXIT +${round(profit,2)}")
+                daily_profit += profit
                 break
 
-        # 🎯 MODERATE TP
-        if profit > 0.5:
-            send(f"🎯 TP +${round(profit,2)}")
-            break
-
-        # 🔁 DELAYED HEDGE
+        # 🔁 HEDGE
         if profit < -0.6:
             if hedge >= MAX_HEDGE:
                 send(f"🛑 LOSS ${round(profit,2)}")
+                daily_profit += profit
                 break
 
             hedge += 1
@@ -166,7 +174,6 @@ def trade(symbol, direction):
 ➡️ {direction}
 ⚡ x{leverage}
 💰 Margin: ${margin}
-📥 Entry: {round(entry,2)}
 """)
 
         time.sleep(1)
@@ -174,11 +181,17 @@ def trade(symbol, direction):
     last_trade_time = time.time()
     in_trade = False
 
-# ===== MAIN LOOP =====
 def main():
-    send("🤖 V7.1 Moderate Bot Active 🚀")
+    send("🤖 V7.2.1 Daily Limit Bot Active 💰")
 
     while True:
+        reset_daily()
+
+        if daily_profit >= DAILY_TARGET:
+            send(f"🏁 Daily Target Hit: ${round(daily_profit,2)} — Bot Paused")
+            time.sleep(60)
+            continue
+
         if in_trade:
             time.sleep(1)
             continue
