@@ -1,27 +1,27 @@
 import requests
 import time
 import os
+import base64
+import hmac
+import hashlib
 from datetime import datetime
+
+API_KEY = os.getenv("KUCOIN_KEY")
+API_SECRET = os.getenv("KUCOIN_SECRET")
+API_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
 
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
+BASE_URL = "https://api-futures.kucoin.com"
+
 LEVERAGE = 20
-DAILY_TARGET = 2
+trade_active = False
 
 COINS = [
-"BTC-USDT","ETH-USDT","SOL-USDT","AVAX-USDT","LINK-USDT","ADA-USDT","XRP-USDT",
-"DOGE-USDT","DOT-USDT","MATIC-USDT","OP-USDT","ARB-USDT","APT-USDT","SUI-USDT",
-"SEI-USDT","INJ-USDT","NEAR-USDT","FTM-USDT","ATOM-USDT","FIL-USDT",
-"AAVE-USDT","RNDR-USDT","GALA-USDT","SAND-USDT","APE-USDT","LDO-USDT",
-"UNI-USDT","CRV-USDT","DYDX-USDT","BLUR-USDT","PEPE-USDT","BONK-USDT",
-"SHIB-USDT","FLOKI-USDT","ORDI-USDT","TIA-USDT","JTO-USDT","PYTH-USDT",
-"WLD-USDT","ARKM-USDT"
+"BTCUSDTM","ETHUSDTM","SOLUSDTM","AVAXUSDTM","LINKUSDTM","ADAUSDTM",
+"XRPUSDTM","DOGEUSDTM","DOTUSDTM","MATICUSDTM","OPUSDTM","ARBUSDTM"
 ]
-
-total_profit = 0
-start_day = datetime.utcnow().day
-trade_active = False  # 🔒 muhimu sana
 
 def send(msg):
     try:
@@ -32,142 +32,135 @@ def send(msg):
     except:
         pass
 
+def sign(method, endpoint, body=""):
+    now = str(int(time.time() * 1000))
+    str_to_sign = now + method + endpoint + body
+
+    signature = base64.b64encode(
+        hmac.new(API_SECRET.encode(), str_to_sign.encode(), hashlib.sha256).digest()
+    ).decode()
+
+    passphrase = base64.b64encode(
+        hmac.new(API_SECRET.encode(), API_PASSPHRASE.encode(), hashlib.sha256).digest()
+    ).decode()
+
+    return {
+        "KC-API-KEY": API_KEY,
+        "KC-API-SIGN": signature,
+        "KC-API-TIMESTAMP": now,
+        "KC-API-PASSPHRASE": passphrase,
+        "KC-API-KEY-VERSION": "2",
+        "Content-Type": "application/json"
+    }
+
 def get_price(symbol):
     try:
         r = requests.get(
-            "https://api.kucoin.com/api/v1/market/orderbook/level1",
-            params={"symbol": symbol},
-            timeout=3
+            "https://api-futures.kucoin.com/api/v1/ticker",
+            params={"symbol": symbol}
         ).json()
         return float(r["data"]["price"])
     except:
         return None
 
-def quick_analyze(symbol):
-    p1 = get_price(symbol)
-    time.sleep(0.2)
-    p2 = get_price(symbol)
-    time.sleep(0.2)
-    p3 = get_price(symbol)
-
-    if None in [p1, p2, p3]:
-        return None
-
-    move = abs(p3 - p1)
-
-    if move < p1 * 0.0003:
-        return None
-
-    if p1 < p2 < p3:
-        return "LONG"
-    elif p1 > p2 > p3:
-        return "SHORT"
-    else:
-        return None
-
+# ⚡ FAST SCAN
 def find_trade():
     for coin in COINS:
-        direction = quick_analyze(coin)
-        if direction:
-            return coin, direction
+        p1 = get_price(coin)
+        time.sleep(0.2)
+        p2 = get_price(coin)
+        time.sleep(0.2)
+        p3 = get_price(coin)
+
+        if None in [p1, p2, p3]:
+            continue
+
+        if p1 < p2 < p3:
+            return coin, "buy"
+        elif p1 > p2 > p3:
+            return coin, "sell"
+
     return None, None
 
-def trade(balance):
-    global total_profit, trade_active
+# 💰 GET BALANCE
+def get_balance():
+    endpoint = "/api/v1/account-overview?currency=USDT"
+    headers = sign("GET", endpoint)
 
-    trade_active = True  # 🔒 start lock
+    r = requests.get(BASE_URL + endpoint, headers=headers).json()
 
-    symbol, direction = find_trade()
+    try:
+        return float(r["data"]["availableBalance"])
+    except:
+        return 0
+
+# 🚀 PLACE ORDER
+def place_order(symbol, side, size):
+    endpoint = "/api/v1/orders"
+
+    body = {
+        "symbol": symbol,
+        "side": side,
+        "type": "market",
+        "size": size,
+        "leverage": str(LEVERAGE)
+    }
+
+    body_str = str(body).replace("'", '"')
+    headers = sign("POST", endpoint, body_str)
+
+    r = requests.post(BASE_URL + endpoint, headers=headers, data=body_str)
+    return r.json()
+
+def trade():
+    global trade_active
+
+    if trade_active:
+        return
+
+    symbol, side = find_trade()
 
     if symbol is None:
         send("⚡ scanning...")
-        trade_active = False
+        return
+
+    balance = get_balance()
+
+    if balance <= 1:
+        send("⚠️ Low balance")
         return
 
     margin = balance * 0.3
-    entry = get_price(symbol)
+    size = int(margin * LEVERAGE / get_price(symbol))
 
-    if entry is None:
-        trade_active = False
-        return
+    trade_active = True
 
-    if direction == "LONG":
-        tp = entry * 1.001
-    else:
-        tp = entry * 0.999
-
-    send(f"""🚀 TRADE START
+    send(f"""🚀 REAL TRADE
 
 📊 {symbol}
-📍 {direction}
+📍 {side.upper()}
 
 💰 Margin: ${round(margin,2)}
 ⚡ x{LEVERAGE}
-
-📥 Entry: {entry}
-🎯 TP: {round(tp,4)}
-
-💵 Total: ${round(total_profit,3)}
 """)
 
-    for i in range(90):
-        price = get_price(symbol)
-        if price is None:
-            continue
+    res = place_order(symbol, side, size)
 
-        if direction == "LONG":
-            pnl = (price - entry)/entry * margin * LEVERAGE
-            tp_hit = price >= tp
-        else:
-            pnl = (entry - price)/entry * margin * LEVERAGE
-            tp_hit = price <= tp
+    send(f"✅ Order placed")
 
-        if tp_hit:
-            total_profit += pnl
-            send(f"🏁 TP HIT +${round(pnl,3)} | Total ${round(total_profit,3)}")
-            trade_active = False
-            return
+    time.sleep(10)
 
-        if pnl < -0.1:
-            total_profit += pnl
-            send(f"🛑 STOP LOSS ${round(pnl,3)} | Total ${round(total_profit,3)}")
-            trade_active = False
-            return
-
-        time.sleep(1)
-
-    send("⏹ EXIT")
     trade_active = False
 
 def main():
-    global total_profit, start_day, trade_active
-
-    send("🤖 V18.4 SAFE MODE ACTIVE 🚀")
+    send("🤖 V20 REAL BOT LIVE 🚀")
 
     while True:
         try:
-            today = datetime.utcnow().day
-
-            if today != start_day:
-                total_profit = 0
-                start_day = today
-
-            if total_profit >= DAILY_TARGET:
-                send(f"🛑 TARGET HIT ${round(total_profit,2)}")
-                time.sleep(3600)
-                continue
-
-            if trade_active:
-                time.sleep(2)
-                continue
-
-            balance = 4
-            trade(balance)
-
-            time.sleep(2)
-
+            trade()
+            time.sleep(3)
         except Exception as e:
-            send(f"🔥 ERROR: {str(e)}")
+            send(f"ERROR: {str(e)}")
             time.sleep(5)
 
 if __name__ == "__main__":
