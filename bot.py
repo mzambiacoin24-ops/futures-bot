@@ -6,6 +6,7 @@ import hashlib
 import base64
 from datetime import datetime
 
+# ===== ENV =====
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
@@ -18,12 +19,14 @@ BASE_URL = "https://api-futures.kucoin.com"
 # ===== TELEGRAM =====
 def send(msg):
     try:
-        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-                      data={"chat_id": CHAT_ID, "text": msg})
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": msg}
+        )
     except:
         pass
 
-# ===== SIGN =====
+# ===== SIGN (FIXED) =====
 def sign(method, endpoint, body=""):
     now = str(int(time.time() * 1000))
     str_to_sign = now + method + endpoint + body
@@ -41,7 +44,8 @@ def sign(method, endpoint, body=""):
         "KC-API-SIGN": signature,
         "KC-API-TIMESTAMP": now,
         "KC-API-PASSPHRASE": passphrase,
-        "KC-API-KEY-VERSION": "2"
+        "KC-API-KEY-VERSION": "2",
+        "Content-Type": "application/json"
     }
 
 # ===== FUTURES BALANCE =====
@@ -51,8 +55,16 @@ def get_balance():
 
     try:
         res = requests.get(BASE_URL + endpoint, headers=headers).json()
-        return float(res["data"]["availableBalance"])
-    except:
+        print("API RESPONSE:", res)
+
+        if "data" in res:
+            return float(res["data"]["availableBalance"])
+        else:
+            send(f"⚠️ API ERROR: {res}")
+            return 0
+
+    except Exception as e:
+        send(f"❌ ERROR: {str(e)}")
         return 0
 
 # ===== PRICE =====
@@ -99,30 +111,35 @@ def trade(symbol, direction, margin):
 
 # ===== MAIN =====
 def main():
-    send("🤖 V10 Futures Bot Active 🚀")
+    send("🤖 V10.1 Futures Bot Active 🚀")
 
     while True:
-        if not trading_time():
-            time.sleep(30)
-            continue
+        try:
+            if not trading_time():
+                time.sleep(30)
+                continue
 
-        balance = get_balance()
+            balance = get_balance()
 
-        if balance <= 1:
-            send(f"⚠️ No futures balance (${balance})")
+            if balance <= 1:
+                send(f"⚠️ No futures balance (${balance})")
+                time.sleep(60)
+                continue
+
+            send(f"💰 Futures Balance: ${round(balance,2)}")
+
+            margin = balance * 0.5
+
+            coin = "BTC-USDT"
+            direction = "LONG"
+
+            trade(coin, direction, margin)
+
             time.sleep(60)
-            continue
 
-        send(f"💰 Futures Balance: ${round(balance,2)}")
-
-        margin = balance * 0.5
-
-        coin = "BTC-USDT"
-        direction = "LONG"
-
-        trade(coin, direction, margin)
-
-        time.sleep(60)
+        except Exception as e:
+            send(f"🔥 CRASH: {str(e)}")
+            time.sleep(10)
 
 if __name__ == "__main__":
     main()
