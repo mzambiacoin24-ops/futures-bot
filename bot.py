@@ -5,6 +5,7 @@ import hmac
 import hashlib
 import base64
 from datetime import datetime
+import random
 
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -88,6 +89,7 @@ def trade(symbol, direction, margin):
 📥 Entry: {entry}
 """)
 
+    # HOLD TIME (30 sec)
     time.sleep(30)
 
     exit_price = get_price(symbol)
@@ -100,7 +102,7 @@ def trade(symbol, direction, margin):
     send(f"🏁 CLOSED +${round(profit,2)}")
 
 def main():
-    send("🤖 V10.6 LIVE BOT ACTIVE 🇹🇿🚀")
+    send("🤖 V10.7 HEDGING BOT ACTIVE 🇹🇿🚀")
 
     while True:
         try:
@@ -118,7 +120,9 @@ def main():
             margin = balance * 0.5
 
             coin = "BTC-USDT"
-            direction = "LONG"
+
+            # 🔥 HEDGING (random direction)
+            direction = random.choice(["LONG", "SHORT"])
 
             trade(coin, direction, margin)
 
