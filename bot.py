@@ -18,8 +18,7 @@ BASE_URL = "https://api-futures.kucoin.com"
 LEVERAGE = 20
 trade_active = False
 TOTAL_PROFIT = 0
-
-TARGET_PROFIT = 0.05  # 💰 PROFIT TARGET
+TARGET_PROFIT = 0.05
 
 COINS = [
 "BTCUSDTM","ETHUSDTM","SOLUSDTM","LINKUSDTM",
@@ -58,10 +57,7 @@ def sign(method, endpoint, body=""):
 
 def get_price(symbol):
     try:
-        r = requests.get(
-            BASE_URL + "/api/v1/ticker",
-            params={"symbol": symbol}
-        ).json()
+        r = requests.get(BASE_URL + "/api/v1/ticker", params={"symbol": symbol}).json()
         return float(r["data"]["price"])
     except:
         return None
@@ -77,21 +73,23 @@ def get_balance():
     except:
         return 0
 
-# 🔥 REAL POSITION DATA
+# ✅ FIXED POSITION READER
 def get_position(symbol):
-    endpoint = "/api/v1/positions"
+    endpoint = f"/api/v1/position?symbol={symbol}"
     headers = sign("GET", endpoint)
 
     r = requests.get(BASE_URL + endpoint, headers=headers).json()
 
     try:
-        for pos in r["data"]:
-            if pos["symbol"] == symbol and float(pos["currentQty"]) != 0:
-                return {
-                    "size": abs(float(pos["currentQty"])),
-                    "entry": float(pos["avgEntryPrice"]),
-                    "pnl": float(pos["unrealisedPnl"])
-                }
+        data = r.get("data", {})
+        qty = float(data.get("currentQty", 0))
+
+        if qty != 0:
+            return {
+                "size": abs(qty),
+                "entry": float(data.get("avgEntryPrice", 0)),
+                "pnl": float(data.get("unrealisedPnl", 0))
+            }
     except:
         pass
 
@@ -151,8 +149,8 @@ def trade():
         return
 
     margin = balance * 0.3
-    position = margin * LEVERAGE
-    size = int(position / price)
+    position_value = margin * LEVERAGE
+    size = int(position_value / price)
 
     trade_active = True
 
@@ -163,7 +161,7 @@ def trade():
 
 💰 Margin: ${round(margin,2)}
 ⚡ Leverage: x{LEVERAGE}
-📦 Position: ${round(position,2)}
+📦 Position: ${round(position_value,2)}
 
 📥 Entry: {round(price,4)}
 
@@ -172,7 +170,7 @@ def trade():
 
     place_order(symbol, side, size)
 
-    time.sleep(2)  # give exchange time
+    time.sleep(3)
 
     while True:
         pos = get_position(symbol)
@@ -183,7 +181,6 @@ def trade():
 
         pnl = pos["pnl"]
 
-        # 🎯 REAL PROFIT TARGET
         if pnl >= TARGET_PROFIT:
             close_side = "sell" if side == "buy" else "buy"
             place_order(symbol, close_side, pos["size"])
@@ -202,7 +199,7 @@ def trade():
         time.sleep(1)
 
 def main():
-    send("🤖 V24 TRUE REAL BOT LIVE 💰")
+    send("🤖 V25 REAL BOT CONNECTED 🚀")
 
     while True:
         try:
