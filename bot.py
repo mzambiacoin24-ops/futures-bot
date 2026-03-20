@@ -42,7 +42,7 @@ def get_price(symbol):
     except:
         return None
 
-# 🔥 IMPROVED ANALYSIS (BALANCED)
+# 🔥 RELAXED SMART TREND
 def analyze(symbol):
     prices = []
 
@@ -51,20 +51,20 @@ def analyze(symbol):
         if p is None:
             return None, None
         prices.append(p)
-        time.sleep(0.3)  # faster scan
+        time.sleep(0.3)
 
     move = abs(prices[-1] - prices[0])
 
-    up = all(prices[i] < prices[i+1] for i in range(len(prices)-1))
-    down = all(prices[i] > prices[i+1] for i in range(len(prices)-1))
+    up_count = sum(prices[i] < prices[i+1] for i in range(len(prices)-1))
+    down_count = sum(prices[i] > prices[i+1] for i in range(len(prices)-1))
 
-    # 🔥 less strict filter
-    if move < prices[0] * 0.0004:
+    # less strict filter
+    if move < prices[0] * 0.0003:
         return None, None
 
-    if up:
+    if up_count >= 3:
         return "LONG", move
-    elif down:
+    elif down_count >= 3:
         return "SHORT", move
     else:
         return None, None
@@ -93,7 +93,7 @@ def trade(balance):
     symbol, direction = pick_best()
 
     if symbol is None:
-        send("⏳ Scanning market...")
+        send("⏳ Still scanning...")
         time.sleep(5)
         return
 
@@ -111,7 +111,7 @@ def trade(balance):
     send(f"""🚀 TRADE START
 
 📊 {symbol}
-🔥 Best Opportunity
+🔥 Smart Entry
 
 📍 {direction}
 
@@ -123,10 +123,6 @@ def trade(balance):
 
 💵 Total Profit: ${round(total_profit,3)}
 """)
-
-    hedge_open = False
-    hedge_dir = None
-    hedge_margin = 0
 
     for i in range(120):
         price = get_price(symbol)
@@ -140,49 +136,23 @@ def trade(balance):
             pnl = (entry - price)/entry * margin * LEVERAGE
             tp_hit = price <= tp
 
-        total_pnl = pnl
-
-        if pnl < -0.03 and not hedge_open:
-            hedge_open = True
-            hedge_dir = "SHORT" if direction == "LONG" else "LONG"
-            hedge_margin = margin * 2
-
-            send(f"""🔁 HEDGE ON
-
-Direction: {hedge_dir}
-💰 ${round(hedge_margin,2)}
-""")
-
-        if hedge_open:
-            if hedge_dir == "LONG":
-                hedge_pnl = (price - entry)/entry * hedge_margin * LEVERAGE
-            else:
-                hedge_pnl = (entry - price)/entry * hedge_margin * LEVERAGE
-
-            total_pnl = pnl + hedge_pnl
-
         if i % 10 == 0:
-            send(f"""📊 STATUS
-
-{symbol}
-PNL: {round(total_pnl,3)}
-💰 Total: ${round(total_profit,3)}
-""")
+            send(f"📊 PNL: {round(pnl,3)}")
 
         if tp_hit:
-            total_profit += total_pnl
+            total_profit += pnl
             send(f"""🏁 TP HIT
 
-💰 +${round(total_pnl,3)}
+💰 +${round(pnl,3)}
 📊 Total: ${round(total_profit,3)}
 """)
             return
 
-        if total_pnl < -0.15:
-            total_profit += total_pnl
+        if pnl < -0.12:
+            total_profit += pnl
             send(f"""🛑 STOP LOSS
 
-Loss: ${round(total_pnl,3)}
+Loss: ${round(pnl,3)}
 📊 Total: ${round(total_profit,3)}
 """)
             return
@@ -194,7 +164,7 @@ Loss: ${round(total_pnl,3)}
 def main():
     global total_profit, start_day
 
-    send("🤖 V18.1 AUTO SCANNER ACTIVE 🚀")
+    send("🤖 V18.2 SMART SCANNER ACTIVE 🚀")
 
     while True:
         try:
@@ -205,15 +175,11 @@ def main():
                 start_day = today
 
             if total_profit >= DAILY_TARGET:
-                send(f"""🛑 TARGET HIT
-
-💰 ${round(total_profit,2)}
-""")
+                send(f"🛑 Target reached: ${round(total_profit,2)}")
                 time.sleep(3600)
                 continue
 
             balance = 4
-
             trade(balance)
 
             time.sleep(10)
