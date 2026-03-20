@@ -6,7 +6,6 @@ import hashlib
 import base64
 from datetime import datetime
 
-# ===== ENV =====
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
@@ -14,7 +13,7 @@ KUCOIN_KEY = os.getenv("KUCOIN_KEY")
 KUCOIN_SECRET = os.getenv("KUCOIN_SECRET")
 KUCOIN_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
 
-BASE_URL = "https://api.kucoin.com"
+BASE_URL = "https://api-futures.kucoin.com"
 
 # ===== TELEGRAM =====
 def send(msg):
@@ -37,7 +36,7 @@ def sign(method, endpoint, body=""):
         hmac.new(KUCOIN_SECRET.encode(), KUCOIN_PASSPHRASE.encode(), hashlib.sha256).digest()
     ).decode()
 
-    headers = {
+    return {
         "KC-API-KEY": KUCOIN_KEY,
         "KC-API-SIGN": signature,
         "KC-API-TIMESTAMP": now,
@@ -45,28 +44,22 @@ def sign(method, endpoint, body=""):
         "KC-API-KEY-VERSION": "2"
     }
 
-    return headers
-
-# ===== BALANCE =====
+# ===== FUTURES BALANCE =====
 def get_balance():
-    endpoint = "/api/v1/accounts"
+    endpoint = "/api/v1/account-overview?currency=USDT"
     headers = sign("GET", endpoint)
 
     try:
         res = requests.get(BASE_URL + endpoint, headers=headers).json()
-        for acc in res["data"]:
-            if acc["currency"] == "USDT":
-                return float(acc["available"])
+        return float(res["data"]["availableBalance"])
     except:
         return 0
-
-    return 0
 
 # ===== PRICE =====
 def get_price(symbol):
     try:
         r = requests.get(
-            BASE_URL + "/api/v1/market/orderbook/level1",
+            "https://api.kucoin.com/api/v1/market/orderbook/level1",
             params={"symbol": symbol}
         ).json()
         return float(r["data"]["price"])
@@ -78,11 +71,11 @@ def trading_time():
     hour = (datetime.utcnow().hour + 3) % 24
     return 4 <= hour < 16
 
-# ===== TRADE (SIMULATED EXECUTION FOR NOW) =====
+# ===== TRADE (SIMULATION) =====
 def trade(symbol, direction, margin):
     entry = get_price(symbol)
 
-    send(f"""🚀 LIVE TRADE
+    send(f"""🚀 TRADE START
 
 📊 {symbol}
 📍 {direction}
@@ -106,7 +99,7 @@ def trade(symbol, direction, margin):
 
 # ===== MAIN =====
 def main():
-    send("🤖 V9 KuCoin Bot Active 🚀")
+    send("🤖 V10 Futures Bot Active 🚀")
 
     while True:
         if not trading_time():
@@ -116,11 +109,11 @@ def main():
         balance = get_balance()
 
         if balance <= 1:
-            send(f"⚠️ No balance detected (${balance})")
+            send(f"⚠️ No futures balance (${balance})")
             time.sleep(60)
             continue
 
-        send(f"💰 Balance: ${balance}")
+        send(f"💰 Futures Balance: ${round(balance,2)}")
 
         margin = balance * 0.5
 
