@@ -73,6 +73,8 @@ def trade(balance):
     hedge_direction = None
     hedge_margin = 0
 
+    peak_profit = 0
+
     for i in range(180):  # ~3 minutes
         price = get_price(symbol)
 
@@ -84,11 +86,11 @@ def trade(balance):
 
         total_pnl = pnl_main
 
-        # 🔁 HEDGE SYSTEM (STRONG)
+        # 🔁 HEDGE
         if pnl_main < -0.02 and not hedge_open:
             hedge_open = True
             hedge_direction = "SHORT" if direction == "LONG" else "LONG"
-            hedge_margin = base_margin * 2   # 🔥 nguvu mara 2
+            hedge_margin = base_margin * 2
 
             send(f"""🔁 HEDGE ACTIVATED
 
@@ -105,7 +107,7 @@ Direction → {hedge_direction}
 
             total_pnl = pnl_main + pnl_hedge
 
-        # 📊 LIVE STATUS
+        # 📊 STATUS
         if i % 10 == 0:
             send(f"""📊 STATUS
 
@@ -113,15 +115,28 @@ Main: {round(pnl_main,3)}
 Total: {round(total_pnl,3)}
 """)
 
-        # 🎯 EXIT PROFIT
-        if total_pnl > 0.05:
-            send(f"""🏁 PROFIT CLOSED
+        # 🔥 TRACK PROFIT PEAK
+        if total_pnl > peak_profit:
+            peak_profit = total_pnl
 
-💰 +${round(total_pnl,2)}
+        # 🎯 QUICK PROFIT LOCK
+        if total_pnl > 0.02:
+            send(f"""🏁 QUICK PROFIT
+
+💰 +${round(total_pnl,3)}
 """)
             return
 
-        # 🛑 LOSS CONTROL
+        # 🔥 TRAILING EXIT (IMPORTANT)
+        if peak_profit > 0.02 and total_pnl < peak_profit * 0.6:
+            send(f"""🔒 TRAILING EXIT
+
+Peak: {round(peak_profit,3)}
+Exit: {round(total_pnl,3)}
+""")
+            return
+
+        # 🛑 HARD STOP LOSS
         if total_pnl < -0.1:
             send(f"""🛑 STOP LOSS
 
@@ -137,7 +152,7 @@ def get_balance():
     return 4
 
 def main():
-    send("🤖 V13 REAL HEDGE BOT ACTIVE 🚀")
+    send("🤖 V14 PROFIT LOCK BOT ACTIVE 🚀")
 
     while True:
         try:
