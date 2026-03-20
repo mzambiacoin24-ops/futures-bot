@@ -1,7 +1,6 @@
 import requests
 import time
 import os
-from datetime import datetime
 
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -14,33 +13,23 @@ COINS = [
     "AVAX-USDT","LINK-USDT"
 ]
 
-BASE_MARGIN = 10
-margin = BASE_MARGIN
-
+MARGIN = 50
+LEVERAGE = 20
 COOLDOWN = 5
 MAX_HEDGE = 2
-DAILY_TARGET = 10
 
 price_history = {}
 price_cache = {}
-
-last_trade_time = 0
 in_trade = False
+last_trade_time = 0
 
-daily_profit = 0
-current_day = datetime.now().day
-
-# TELEGRAM
 def send(msg):
     try:
-        requests.post(f"{URL}/sendMessage", data={
-            "chat_id": CHAT_ID,
-            "text": msg
-        })
+        requests.post(f"{URL}/sendMessage",
+                      data={"chat_id": CHAT_ID, "text": msg})
     except:
         pass
 
-# PRICE
 def get_price(symbol):
     try:
         res = requests.get(
@@ -51,30 +40,30 @@ def get_price(symbol):
     except:
         return None
 
-# HISTORY
+# ===== HISTORY =====
 def update_history(symbol, price):
     if symbol not in price_history:
         price_history[symbol] = []
 
     price_history[symbol].append(price)
 
-    if len(price_history[symbol]) > 6:
+    if len(price_history[symbol]) > 5:
         price_history[symbol].pop(0)
 
-# SIGNAL
+# ===== FAST TREND DETECTION (3m STYLE) =====
 def get_signal(symbol):
     h = price_history.get(symbol, [])
 
-    if len(h) < 6:
+    if len(h) < 4:
         return None
 
-    up = all(h[i] < h[i+1] for i in range(4))
-    down = all(h[i] > h[i+1] for i in range(4))
+    up = h[0] < h[1] < h[2] < h[3]
+    down = h[0] > h[1] > h[2] > h[3]
 
     body = abs(h[-1] - h[-2])
     prev_body = abs(h[-2] - h[-3])
 
-    if body > prev_body * 1.2:
+    if body > prev_body * 1.1:
         if up:
             return "LONG"
         if down:
@@ -82,9 +71,9 @@ def get_signal(symbol):
 
     return None
 
-# SCAN
+# ===== SMART SCAN =====
 def get_best_coin():
-    best_coin = None
+    best = None
     best_move = 0
 
     for coin in COINS:
@@ -98,37 +87,37 @@ def get_best_coin():
             prev = price_cache[coin]
             move = abs((price - prev) / prev)
 
-            if move > 0.0005 and move > best_move:
+            if move > 0.0004 and move > best_move:
                 best_move = move
-                best_coin = coin
+                best = coin
 
         price_cache[coin] = price
 
-    return best_coin
+    return best
 
-# TRADE
+# ===== TRADE =====
 def trade(symbol, direction):
-    global last_trade_time, in_trade, margin, daily_profit
+    global in_trade, last_trade_time
 
     in_trade = True
 
-    price = get_price(symbol)
-    if not price:
+    entry = get_price(symbol)
+    if not entry:
         in_trade = False
         return
 
-    entry = price
-    leverage = 10
     hedge = 0
-    peak_profit = 0
+    leverage = LEVERAGE
+    margin = MARGIN
+    peak = 0
 
     send(f"""🚀 TRADE START
 
 📊 {symbol}
 📍 {direction}
 
-💰 Margin: ${round(margin,2)}
-⚡ Leverage: x{leverage}
+💰 Margin: ${margin}
+⚡ x{leverage}
 
 📥 Entry: {round(entry,2)}
 """)
@@ -145,46 +134,38 @@ def trade(symbol, direction):
         else:
             profit = (entry - current)/entry * position
 
-        if profit > peak_profit:
-            peak_profit = profit
+        if profit > peak:
+            peak = profit
 
-        # 🔥 TRAILING LOCK
-        if peak_profit > 0.04:
-            lock = peak_profit * 0.6
+        # 🔒 TRAILING (FAST)
+        if peak > 0.1:
+            lock = peak * 0.6
             if profit < lock:
-                send(f"🔒 TRAILING EXIT +${round(profit,2)}")
-                daily_profit += profit
-                margin += profit  # compounding
+                send(f"🔒 EXIT +${round(profit,2)}")
                 break
 
-        # BIG TP
-        if profit > 0.2:
-            send(f"🎯 BIG TP +${round(profit,2)}")
-            daily_profit += profit
-            margin += profit
+        # 💥 BIG TP
+        if profit > 0.4:
+            send(f"🎯 TP +${round(profit,2)}")
             break
 
-        # HEDGE
-        if profit < -0.03:
-
+        # 🔁 HEDGE
+        if profit < -0.08:
             if hedge >= MAX_HEDGE:
-                send(f"🛑 EXIT LOSS ${round(profit,2)}")
-                daily_profit += profit
-                margin += profit
+                send(f"🛑 LOSS ${round(profit,2)}")
                 break
 
             hedge += 1
             direction = "SHORT" if direction == "LONG" else "LONG"
-
-            leverage = 20 if hedge == 1 else 30
-            margin += 5
+            leverage = 30
+            margin += 10
             entry = current
 
             send(f"""🔁 HEDGE {hedge}
 
 ➡️ {direction}
 ⚡ x{leverage}
-💰 Margin: ${round(margin,2)}
+💰 Margin: ${margin}
 """)
 
         time.sleep(1)
@@ -192,40 +173,26 @@ def trade(symbol, direction):
     last_trade_time = time.time()
     in_trade = False
 
-# MAIN
+# ===== MAIN =====
 def main():
-    global current_day, daily_profit
-
-    send("🤖 V6.2 Money Bot Active 💰")
+    send("🤖 V7 Fast Trend Bot Active 🚀")
 
     while True:
-        now_day = datetime.now().day
-
-        # RESET DAY
-        if now_day != current_day:
-            current_day = now_day
-            daily_profit = 0
-            send("🌅 New Day Reset")
-
-        # STOP IF TARGET HIT
-        if daily_profit >= DAILY_TARGET:
-            send(f"🎉 DAILY TARGET HIT: ${round(daily_profit,2)}\nBot Paused")
-            time.sleep(60)
-            continue
-
-        now = time.time()
-
-        if now - last_trade_time < COOLDOWN:
+        if in_trade:
             time.sleep(1)
             continue
 
-        symbol = get_best_coin()
+        if time.time() - last_trade_time < COOLDOWN:
+            time.sleep(1)
+            continue
 
-        if symbol:
-            direction = get_signal(symbol)
+        coin = get_best_coin()
 
-            if direction and not in_trade:
-                trade(symbol, direction)
+        if coin:
+            signal = get_signal(coin)
+
+            if signal:
+                trade(coin, signal)
 
         time.sleep(1)
 
