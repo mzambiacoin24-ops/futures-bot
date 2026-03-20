@@ -45,6 +45,12 @@ def sign(method, endpoint, body=""):
         "Content-Type": "application/json"
     }
 
+# ===== TIME TZ (FIXED) =====
+def trading_time():
+    hour = (datetime.utcnow().hour + 3) % 24
+    return 4 <= hour < 22   # ✅ HAPA NDIO FIX
+
+# ===== BALANCE =====
 def get_balance():
     endpoint = "/api/v1/account-overview?currency=USDT"
     headers = sign("GET", endpoint)
@@ -52,8 +58,7 @@ def get_balance():
     try:
         res = requests.get(BASE_URL + endpoint, headers=headers).json()
 
-        # 🔥 DEBUG FULL RESPONSE
-        send(f"📡 DEBUG RESPONSE:\n{res}")
+        send(f"📡 DEBUG:\n{res}")
 
         if res.get("code") != "200000":
             return 0
@@ -64,37 +69,25 @@ def get_balance():
         send(f"❌ ERROR: {str(e)}")
         return 0
 
-def get_price(symbol):
-    try:
-        r = requests.get(
-            "https://api.kucoin.com/api/v1/market/orderbook/level1",
-            params={"symbol": symbol}
-        ).json()
-        return float(r["data"]["price"])
-    except:
-        return None
-
-def trading_time():
-    hour = (datetime.utcnow().hour + 3) % 24
-    return 4 <= hour < 16
-
+# ===== MAIN =====
 def main():
-    send("🤖 V10.3 DEBUG BOT ACTIVE 🚀")
+    send("🤖 V10.5 TZ BOT ACTIVE 🇹🇿🚀")
 
     while True:
         try:
             if not trading_time():
-                time.sleep(30)
+                send("⏰ Outside trading time")
+                time.sleep(60)
                 continue
 
             balance = get_balance()
 
             if balance <= 1:
-                send(f"⚠️ No balance detected: ${balance}")
+                send(f"⚠️ Balance: ${balance}")
                 time.sleep(60)
                 continue
 
-            send(f"💰 BALANCE OK: ${balance}")
+            send(f"💰 BALANCE: ${balance}")
 
             time.sleep(60)
 
