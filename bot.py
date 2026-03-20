@@ -19,7 +19,7 @@ COINS = [
 ]
 
 price_cache = {}
-price_history = {}  # 🔥 muhimu kwa ticks
+price_history = {}
 last_trade_time = 0
 
 # TELEGRAM
@@ -43,7 +43,7 @@ def get_price(symbol):
     except:
         return None
 
-# ===== UPDATE HISTORY =====
+# UPDATE HISTORY
 def update_history(symbol, price):
     if symbol not in price_history:
         price_history[symbol] = []
@@ -53,27 +53,25 @@ def update_history(symbol, price):
     if len(price_history[symbol]) > 5:
         price_history[symbol].pop(0)
 
-# ===== CHECK MOMENTUM (5 TICKS) =====
+# DIRECTION (5 TICKS)
 def get_direction(symbol):
     if symbol not in price_history:
         return None
 
-    history = price_history[symbol]
+    h = price_history[symbol]
 
-    if len(history) < 5:
+    if len(h) < 5:
         return None
 
-    # LONG
-    if all(history[i] < history[i+1] for i in range(4)):
+    if all(h[i] < h[i+1] for i in range(4)):
         return "LONG"
 
-    # SHORT
-    if all(history[i] > history[i+1] for i in range(4)):
+    if all(h[i] > h[i+1] for i in range(4)):
         return "SHORT"
 
     return None
 
-# ===== SCANNER (PERCENT BASED) =====
+# SCANNER + FILTER 🔥
 def get_best_coin():
     best_coin = None
     best_move = 0
@@ -91,15 +89,17 @@ def get_best_coin():
             if prev > 0:
                 move_percent = abs((price - prev) / prev)
 
-                if move_percent > best_move:
-                    best_move = move_percent
-                    best_coin = coin
+                # 🔥 FILTER YA TREND (MUHIMU)
+                if move_percent > 0.0005:  # 0.05%
+                    if move_percent > best_move:
+                        best_move = move_percent
+                        best_coin = coin
 
         price_cache[coin] = price
 
     return best_coin
 
-# ===== TRADE ENGINE =====
+# TRADE
 def trade(symbol, direction):
     global last_trade_time
 
@@ -132,8 +132,8 @@ def trade(symbol, direction):
 
         # LONG
         if direction == "LONG":
-            tp = entry * 1.0006
-            sl = entry * 0.9994
+            tp = entry * 1.0008
+            sl = entry * 0.9992
 
             if current >= tp:
                 profit = (tp - entry)/entry * position
@@ -161,8 +161,8 @@ def trade(symbol, direction):
 
         # SHORT
         else:
-            tp = entry * 0.9994
-            sl = entry * 1.0006
+            tp = entry * 0.9992
+            sl = entry * 1.0008
 
             if current <= tp:
                 profit = (entry - tp)/entry * position
@@ -192,9 +192,9 @@ def trade(symbol, direction):
 
     last_trade_time = time.time()
 
-# ===== MAIN =====
+# MAIN
 def main():
-    send("🤖 Smart Futures Bot V4 Active 🚀")
+    send("🤖 Smart Futures Bot V4.1 Clean Mode 🚀")
 
     while True:
         now = time.time()
