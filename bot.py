@@ -5,179 +5,139 @@ import os
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# SETTINGS
-MARGIN = 10
+URL = f"https://api.telegram.org/bot{TOKEN}"
+
+SYMBOL = "BTC-USDT"
+
+MARGIN_BASE = 10
 LEVERAGE = 10
-COOLDOWN = 30
 
-SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT"]
+COOLDOWN = 5
 
+last_price = None
 last_trade_time = 0
-last_price = {}
-last_signal = {}
 
 # ===== TELEGRAM =====
 def send(msg):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+    requests.post(f"{URL}/sendMessage", data={
+        "chat_id": CHAT_ID,
+        "text": msg
+    })
 
 # ===== PRICE =====
-def get_price(symbol):
+def get_price():
     try:
-        url = f"https://api.kucoin.com/api/v1/market/orderbook/level1?symbol={symbol}"
-        res = requests.get(url).json()
-        return float(res['data']['price'])
+        res = requests.get(
+            "https://api.kucoin.com/api/v1/market/orderbook/level1",
+            params={"symbol": SYMBOL}
+        ).json()
+        return float(res["data"]["price"])
     except:
         return None
 
-# ===== SIGNAL =====
-def check_signal(symbol, price):
-    global last_price, last_signal
-
-    if symbol not in last_price:
-        last_price[symbol] = price
-        return None
-
-    prev = last_price[symbol]
-    last_price[symbol] = price
-
-    signal = None
-
-    if price > prev * 1.001:
-        signal = "LONG"
-    elif price < prev * 0.999:
-        signal = "SHORT"
-
-    # avoid duplicate signals
-    if symbol in last_signal and last_signal[symbol] == signal:
-        return None
-
-    if signal:
-        last_signal[symbol] = signal
-
-    return signal
-
-# ===== TRADE =====
-def trade(symbol, side, price):
-    global last_trade_time
-
-    position_size = MARGIN * LEVERAGE
-
-    # BTC special TP
-    if symbol == "BTC-USDT":
-        tp_percent = 0.002
-        sl_percent = 0.002
-    else:
-        tp_percent = 0.004
-        sl_percent = 0.004
-
-    if side == "LONG":
-        tp = price * (1 + tp_percent)
-        sl = price * (1 - sl_percent)
-    else:
-        tp = price * (1 - tp_percent)
-        sl = price * (1 + sl_percent)
-
-    # ENTRY MESSAGE
-    send(f"""🚀 NEW TRADE
-
-📊 {symbol}
-📍 Direction: {side}
-
-💰 Margin: ${MARGIN}
-⚡ Leverage: x{LEVERAGE}
-📦 Position: ${position_size}
-
-📥 Entry: {round(price,2)}
-🎯 TP: {round(tp,2)}
-🛑 SL: {round(sl,2)}
-""")
-
-    # MONITOR
-    while True:
-        current = get_price(symbol)
-        if current is None:
-            continue
-
-        # LONG
-        if side == "LONG":
-            if current >= tp:
-                profit = (tp - price) / price * position_size
-                send(f"""🎯 TP HIT
-
-📊 {symbol}
-📍 LONG
-
-💰 Profit: +${round(profit,2)}
-⚡ Leverage: x{LEVERAGE}
-📦 Position: ${position_size}
-""")
-                break
-
-            if current <= sl:
-                loss = (price - sl) / price * position_size
-                send(f"""🛑 SL HIT
-
-📊 {symbol}
-📍 LONG
-
-❌ Loss: -${round(loss,2)}
-""")
-                break
-
-        # SHORT
-        else:
-            if current <= tp:
-                profit = (price - tp) / price * position_size
-                send(f"""🎯 TP HIT
-
-📊 {symbol}
-📍 SHORT
-
-💰 Profit: +${round(profit,2)}
-⚡ Leverage: x{LEVERAGE}
-📦 Position: ${position_size}
-""")
-                break
-
-            if current >= sl:
-                loss = (sl - price) / price * position_size
-                send(f"""🛑 SL HIT
-
-📊 {symbol}
-📍 SHORT
-
-❌ Loss: -${round(loss,2)}
-""")
-                break
-
-        time.sleep(2)
-
-    last_trade_time = time.time()
-
 # ===== MAIN =====
-def main():
-    send("🤖 Futures Bot Active! Ready to trade 🚀")
+def run():
+    global last_price, last_trade_time
+
+    send("🤖 Hedged Scalping Bot Active")
 
     while True:
-        now = time.time()
-
-        if now - last_trade_time < COOLDOWN:
-            time.sleep(2)
+        price = get_price()
+        if price is None:
             continue
 
-        for symbol in SYMBOLS:
-            price = get_price(symbol)
-            if price is None:
-                continue
+        if last_price is None:
+            last_price = price
+            continue
 
-            signal = check_signal(symbol, price)
+        # ===== SIGNAL =====
+        if time.time() - last_trade_time > COOLDOWN:
 
-            if signal:
-                trade(symbol, signal, price)
+            if price > last_price:
+                direction = "LONG"
+            else:
+                direction = "SHORT"
 
-        time.sleep(5)
+            # ===== TRADE 1 =====
+            margin = MARGIN_BASE
+            position = margin * LEVERAGE
+            entry = price
+
+            send(f"""🚀 TRADE START
+
+📊 {SYMBOL}
+📍 Direction: {direction}
+
+💰 Margin: ${margin}
+⚡ Leverage: x{LEVERAGE}
+📦 Position: ${position}
+
+📥 Entry: {round(entry,2)}
+""")
+
+            # ===== TRACK =====
+            step = 0
+            while step < 3:
+
+                current = get_price()
+
+                # ===== LONG =====
+                if direction == "LONG":
+
+                    tp = entry * 1.0006
+                    sl = entry * 0.9994
+
+                    if current >= tp:
+                        profit = (tp - entry)/entry * position
+                        send(f"🎯 TP HIT +${round(profit,2)}")
+                        break
+
+                    if current <= sl:
+                        step += 1
+                        direction = "SHORT"
+                        margin += 5
+                        position = margin * LEVERAGE
+                        entry = current
+
+                        send(f"""🔁 HEDGE
+
+➡️ SWITCH TO SHORT
+💰 Margin: ${margin}
+📥 Entry: {round(entry,2)}
+""")
+
+                # ===== SHORT =====
+                else:
+
+                    tp = entry * 0.9994
+                    sl = entry * 1.0006
+
+                    if current <= tp:
+                        profit = (entry - tp)/entry * position
+                        send(f"🎯 TP HIT +${round(profit,2)}")
+                        break
+
+                    if current >= sl:
+                        step += 1
+                        direction = "LONG"
+                        margin += 5
+                        position = margin * LEVERAGE
+                        entry = current
+
+                        send(f"""🔁 HEDGE
+
+➡️ SWITCH TO LONG
+💰 Margin: ${margin}
+📥 Entry: {round(entry,2)}
+""")
+
+                time.sleep(1)
+
+            last_trade_time = time.time()
+
+        last_price = price
+        time.sleep(1)
 
 # RUN
 if __name__ == "__main__":
-    main()
+    run()
