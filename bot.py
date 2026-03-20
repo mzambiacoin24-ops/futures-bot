@@ -36,65 +36,52 @@ def get_price(symbol):
         r = requests.get(
             "https://api.kucoin.com/api/v1/market/orderbook/level1",
             params={"symbol": symbol},
-            timeout=5
+            timeout=3
         ).json()
         return float(r["data"]["price"])
     except:
         return None
 
-# 🔥 RELAXED SMART TREND
-def analyze(symbol):
-    prices = []
+# ⚡ FAST TREND CHECK
+def quick_analyze(symbol):
+    p1 = get_price(symbol)
+    time.sleep(0.2)
+    p2 = get_price(symbol)
+    time.sleep(0.2)
+    p3 = get_price(symbol)
 
-    for _ in range(5):
-        p = get_price(symbol)
-        if p is None:
-            return None, None
-        prices.append(p)
-        time.sleep(0.3)
+    if None in [p1, p2, p3]:
+        return None
 
-    move = abs(prices[-1] - prices[0])
+    move = abs(p3 - p1)
 
-    up_count = sum(prices[i] < prices[i+1] for i in range(len(prices)-1))
-    down_count = sum(prices[i] > prices[i+1] for i in range(len(prices)-1))
+    if move < p1 * 0.0003:
+        return None
 
-    # less strict filter
-    if move < prices[0] * 0.0003:
-        return None, None
-
-    if up_count >= 3:
-        return "LONG", move
-    elif down_count >= 3:
-        return "SHORT", move
+    if p1 < p2 < p3:
+        return "LONG"
+    elif p1 > p2 > p3:
+        return "SHORT"
     else:
-        return None, None
+        return None
 
-def pick_best():
-    best_symbol = None
-    best_move = 0
-    best_direction = None
-
+# ⚡ REAL-TIME PICK
+def find_trade():
     for coin in COINS:
-        direction, move = analyze(coin)
+        direction = quick_analyze(coin)
 
-        if direction is None:
-            continue
+        if direction:
+            return coin, direction
 
-        if move > best_move:
-            best_move = move
-            best_symbol = coin
-            best_direction = direction
-
-    return best_symbol, best_direction
+    return None, None
 
 def trade(balance):
     global total_profit
 
-    symbol, direction = pick_best()
+    symbol, direction = find_trade()
 
     if symbol is None:
-        send("⏳ Still scanning...")
-        time.sleep(5)
+        send("⚡ scanning fast...")
         return
 
     margin = balance * 0.3
@@ -111,8 +98,6 @@ def trade(balance):
     send(f"""🚀 TRADE START
 
 📊 {symbol}
-🔥 Smart Entry
-
 📍 {direction}
 
 💰 Margin: ${round(margin,2)}
@@ -121,10 +106,10 @@ def trade(balance):
 📥 Entry: {entry}
 🎯 TP: {round(tp,4)}
 
-💵 Total Profit: ${round(total_profit,3)}
+💵 Total: ${round(total_profit,3)}
 """)
 
-    for i in range(120):
+    for i in range(90):
         price = get_price(symbol)
         if price is None:
             continue
@@ -136,35 +121,22 @@ def trade(balance):
             pnl = (entry - price)/entry * margin * LEVERAGE
             tp_hit = price <= tp
 
-        if i % 10 == 0:
-            send(f"📊 PNL: {round(pnl,3)}")
-
         if tp_hit:
             total_profit += pnl
-            send(f"""🏁 TP HIT
-
-💰 +${round(pnl,3)}
-📊 Total: ${round(total_profit,3)}
-""")
+            send(f"🏁 TP HIT +${round(pnl,3)} | Total ${round(total_profit,3)}")
             return
 
-        if pnl < -0.12:
+        if pnl < -0.1:
             total_profit += pnl
-            send(f"""🛑 STOP LOSS
-
-Loss: ${round(pnl,3)}
-📊 Total: ${round(total_profit,3)}
-""")
+            send(f"🛑 STOP LOSS ${round(pnl,3)} | Total ${round(total_profit,3)}")
             return
 
         time.sleep(1)
 
-    send("⏹ EXIT")
-
 def main():
     global total_profit, start_day
 
-    send("🤖 V18.2 SMART SCANNER ACTIVE 🚀")
+    send("🤖 V18.3 REAL-TIME BOT ACTIVE 🚀")
 
     while True:
         try:
@@ -175,18 +147,19 @@ def main():
                 start_day = today
 
             if total_profit >= DAILY_TARGET:
-                send(f"🛑 Target reached: ${round(total_profit,2)}")
+                send(f"🛑 TARGET HIT ${round(total_profit,2)}")
                 time.sleep(3600)
                 continue
 
             balance = 4
+
             trade(balance)
 
-            time.sleep(10)
+            time.sleep(3)  # ⚡ FAST LOOP
 
         except Exception as e:
             send(f"🔥 ERROR: {str(e)}")
-            time.sleep(10)
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()
