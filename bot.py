@@ -1,170 +1,164 @@
-import os
-import time
 import requests
+import time
+import os
 
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-URL = f"https://api.telegram.org/bot{TOKEN}"
+# SETTINGS
+MARGIN = 10  # fixed $
+LEVERAGE = 10
+COOLDOWN = 30
 
-COINS = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT"]
+SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT"]
 
-# ===== SETTINGS PER COIN =====
-SETTINGS = {
-    "BTC-USDT": {"tp": 0.0005, "sl": 0.0005, "step": 15},
-    "ETH-USDT": {"tp": 0.0007, "sl": 0.0007, "step": 7},
-    "SOL-USDT": {"tp": 0.001, "sl": 0.001, "step": 2},
-    "XRP-USDT": {"tp": 0.001, "sl": 0.001, "step": 2},
-}
+last_trade_time = 0
+last_price = {}
 
-price_data = {c: [] for c in COINS}
-
-positions = []
-active_coin = None
-direction = None
-
-last_market_id = None
-
-# ===== TELEGRAM =====
+# ===== TELEGRAM FUNCTION =====
 def send(msg):
-    requests.post(f"{URL}/sendMessage", json={
-        "chat_id": CHAT_ID,
-        "text": msg
-    })
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
-def market_edit(msg):
-    global last_market_id
-    try:
-        if last_market_id is None:
-            res = requests.post(f"{URL}/sendMessage", json={
-                "chat_id": CHAT_ID,
-                "text": msg
-            }).json()
-            last_market_id = res["result"]["message_id"]
-        else:
-            requests.post(f"{URL}/editMessageText", json={
-                "chat_id": CHAT_ID,
-                "message_id": last_market_id,
-                "text": msg
-            })
-    except:
-        pass
-
-# ===== PRICE =====
+# ===== PRICE FETCH =====
 def get_price(symbol):
     try:
-        url = "https://api.kucoin.com/api/v1/market/orderbook/level1"
-        res = requests.get(url, params={"symbol": symbol}).json()
-        return float(res["data"]["price"])
+        url = f"https://api.kucoin.com/api/v1/market/orderbook/level1?symbol={symbol}"
+        res = requests.get(url).json()
+        return float(res['data']['price'])
     except:
         return None
 
-# ===== START =====
-print("FUTURES BOT RUNNING")
+# ===== SIGNAL LOGIC =====
+def check_signal(symbol, price):
+    global last_price
 
-send("Futures Bot Started\nScanning market...")
+    if symbol not in last_price:
+        last_price[symbol] = price
+        return None
 
-# ===== MAIN =====
-while True:
+    prev = last_price[symbol]
+    last_price[symbol] = price
 
-    # collect prices
-    for coin in COINS:
-        price = get_price(coin)
-        if price:
-            price_data[coin].append(price)
-            if len(price_data[coin]) > 10:
-                price_data[coin].pop(0)
+    # breakout logic
+    if price > prev * 1.001:
+        return "LONG"
+    elif price < prev * 0.999:
+        return "SHORT"
+    else:
+        return None
 
-    # ===== MARKET WATCH =====
-    watch = "MARKET LIVE\n\n"
-    for coin in COINS:
-        if price_data[coin]:
-            watch += f"{coin}: {round(price_data[coin][-1],2)}\n"
+# ===== TRADE EXECUTION (PAPER) =====
+def trade(symbol, side, price):
+    global last_trade_time
 
-    if active_coin:
-        watch += f"\nActive: {active_coin} ({direction})"
+    position_size = MARGIN * LEVERAGE
 
-    market_edit(watch)
+    if symbol == "BTC-USDT":
+        tp_percent = 0.002  # 0.2%
+        sl_percent = 0.002
+    else:
+        tp_percent = 0.004  # 0.4%
+        sl_percent = 0.004
 
-    # ===== SIGNAL DETECTION =====
-    if not active_coin:
-        for coin in COINS:
-            if len(price_data[coin]) < 3:
+    if side == "LONG":
+        tp = price * (1 + tp_percent)
+        sl = price * (1 - sl_percent)
+    else:
+        tp = price * (1 - tp_percent)
+        sl = price * (1 + sl_percent)
+
+    # MESSAGE ENTRY
+    send(f"""🚀 NEW TRADE
+
+📊 {symbol}
+📍 Direction: {side}
+
+💰 Margin: ${MARGIN}
+⚡ Leverage: x{LEVERAGE}
+📦 Position Size: ${position_size}
+
+📥 Entry: {round(price,2)}
+🎯 TP: {round(tp,2)}
+🛑 SL: {round(sl,2)}
+""")
+
+    # ===== MONITOR TRADE =====
+    while True:
+        current = get_price(symbol)
+        if current is None:
+            continue
+
+        if side == "LONG":
+            if current >= tp:
+                profit = (tp - price) / price * position_size
+                send(f"""🎯 TP HIT
+
+📊 {symbol}
+💰 Profit: +${round(profit,2)}
+⚡ Leverage: x{LEVERAGE}
+📦 Position: ${position_size}
+""")
+                break
+
+            if current <= sl:
+                loss = (price - sl) / price * position_size
+                send(f"""🛑 SL HIT
+
+📊 {symbol}
+❌ Loss: -${round(loss,2)}
+""")
+                break
+
+        else:  # SHORT
+            if current <= tp:
+                profit = (price - tp) / price * position_size
+                send(f"""🎯 TP HIT
+
+📊 {symbol}
+💰 Profit: +${round(profit,2)}
+⚡ Leverage: x{LEVERAGE}
+📦 Position: ${position_size}
+""")
+                break
+
+            if current >= sl:
+                loss = (sl - price) / price * position_size
+                send(f"""🛑 SL HIT
+
+📊 {symbol}
+❌ Loss: -${round(loss,2)}
+""")
+                break
+
+        time.sleep(2)
+
+    last_trade_time = time.time()
+
+# ===== MAIN LOOP =====
+def main():
+    send("🤖 Futures Bot Active! Ready to trade 🚀")
+
+    while True:
+        now = time.time()
+
+        # cooldown
+        if now - last_trade_time < COOLDOWN:
+            time.sleep(2)
+            continue
+
+        for symbol in SYMBOLS:
+            price = get_price(symbol)
+            if price is None:
                 continue
 
-            last = price_data[coin][-1]
-            prev = price_data[coin][-2]
+            signal = check_signal(symbol, price)
 
-            # breakout
-            if last > prev:
-                active_coin = coin
-                direction = "LONG"
-                send(f"SIGNAL\n{coin}\nDirection: LONG")
-                break
+            if signal:
+                trade(symbol, signal, price)
 
-            elif last < prev:
-                active_coin = coin
-                direction = "SHORT"
-                send(f"SIGNAL\n{coin}\nDirection: SHORT")
-                break
+        time.sleep(5)
 
-    # ===== ENTRY =====
-    if active_coin:
-        price = price_data[active_coin][-1]
-        cfg = SETTINGS[active_coin]
-
-        if len(positions) < 5:
-
-            if not positions:
-                entry = price
-            else:
-                last_entry = positions[-1]["entry"]
-
-                if direction == "LONG":
-                    entry = last_entry - cfg["step"]
-                else:
-                    entry = last_entry + cfg["step"]
-
-            tp = entry * (1 + cfg["tp"]) if direction == "LONG" else entry * (1 - cfg["tp"])
-            sl = entry * (1 - cfg["sl"]) if direction == "LONG" else entry * (1 + cfg["sl"])
-
-            positions.append({"entry": entry, "tp": tp, "sl": sl})
-
-            send(f"ENTRY #{len(positions)}\n{active_coin}\n{direction}\nEntry: {round(entry,2)}\nTP: {round(tp,2)}\nSL: {round(sl,2)}")
-
-    # ===== EXIT =====
-    if positions:
-        price = price_data[active_coin][-1]
-
-        new_positions = []
-
-        for pos in positions:
-            entry = pos["entry"]
-            tp = pos["tp"]
-            sl = pos["sl"]
-
-            if direction == "LONG":
-                if price >= tp:
-                    send(f"TP HIT\n{active_coin}\nProfit")
-                    continue
-                elif price <= sl:
-                    send(f"SL HIT\n{active_coin}\nLoss")
-                    continue
-            else:
-                if price <= tp:
-                    send(f"TP HIT\n{active_coin}\nProfit")
-                    continue
-                elif price >= sl:
-                    send(f"SL HIT\n{active_coin}\nLoss")
-                    continue
-
-            new_positions.append(pos)
-
-        positions = new_positions
-
-        if not positions:
-            active_coin = None
-            direction = None
-            send("Cycle Complete\nScanning again...")
-
-    time.sleep(3)
+# RUN
+if __name__ == "__main__":
+    main()
