@@ -50,7 +50,7 @@ def update_history(symbol, price):
     if len(price_history[symbol]) > 5:
         price_history[symbol].pop(0)
 
-# ===== FAST TREND DETECTION (3m STYLE) =====
+# ===== TREND DETECTION (FAST + CONFIRM) =====
 def get_signal(symbol):
     h = price_history.get(symbol, [])
 
@@ -71,7 +71,7 @@ def get_signal(symbol):
 
     return None
 
-# ===== SMART SCAN =====
+# ===== SMART COIN SCAN =====
 def get_best_coin():
     best = None
     best_move = 0
@@ -95,7 +95,7 @@ def get_best_coin():
 
     return best
 
-# ===== TRADE =====
+# ===== TRADE ENGINE =====
 def trade(symbol, direction):
     global in_trade, last_trade_time
 
@@ -137,20 +137,20 @@ def trade(symbol, direction):
         if profit > peak:
             peak = profit
 
-        # 🔒 TRAILING (FAST)
-        if peak > 0.1:
-            lock = peak * 0.6
+        # 🔒 SMART TRAILING
+        if peak > 0.2:
+            lock = peak * 0.5
             if profit < lock:
                 send(f"🔒 EXIT +${round(profit,2)}")
                 break
 
-        # 💥 BIG TP
-        if profit > 0.4:
+        # 🎯 MODERATE TP
+        if profit > 0.5:
             send(f"🎯 TP +${round(profit,2)}")
             break
 
-        # 🔁 HEDGE
-        if profit < -0.08:
+        # 🔁 DELAYED HEDGE
+        if profit < -0.6:
             if hedge >= MAX_HEDGE:
                 send(f"🛑 LOSS ${round(profit,2)}")
                 break
@@ -166,6 +166,7 @@ def trade(symbol, direction):
 ➡️ {direction}
 ⚡ x{leverage}
 💰 Margin: ${margin}
+📥 Entry: {round(entry,2)}
 """)
 
         time.sleep(1)
@@ -173,9 +174,9 @@ def trade(symbol, direction):
     last_trade_time = time.time()
     in_trade = False
 
-# ===== MAIN =====
+# ===== MAIN LOOP =====
 def main():
-    send("🤖 V7 Fast Trend Bot Active 🚀")
+    send("🤖 V7.1 Moderate Bot Active 🚀")
 
     while True:
         if in_trade:
