@@ -55,7 +55,7 @@ def trade(balance):
     symbol = pick_symbol()
     direction = get_direction(symbol)
 
-    margin = balance * 0.5
+    base_margin = balance * 0.3
     entry = get_price(symbol)
 
     send(f"""🚀 TRADE START
@@ -63,41 +63,69 @@ def trade(balance):
 📊 {symbol}
 📍 {direction}
 
-💰 Margin: ${round(margin,2)}
+💰 Margin: ${round(base_margin,2)}
 ⚡ x{LEVERAGE}
 
 📥 Entry: {entry}
 """)
 
-    hedge = False
+    hedge_open = False
+    hedge_direction = None
+    hedge_margin = 0
 
-    for i in range(120):  # ~2 minutes
+    for i in range(180):  # ~3 minutes
         price = get_price(symbol)
 
+        # MAIN PNL
         if direction == "LONG":
-            pnl = (price - entry)/entry * margin * LEVERAGE
+            pnl_main = (price - entry)/entry * base_margin * LEVERAGE
         else:
-            pnl = (entry - price)/entry * margin * LEVERAGE
+            pnl_main = (entry - price)/entry * base_margin * LEVERAGE
 
-        # LIVE PNL
-        if i % 10 == 0:
-            send(f"📊 RUNNING PNL: ${round(pnl,3)}")
+        total_pnl = pnl_main
 
-        # HEDGE
-        if pnl < -0.01 and not hedge:
-            hedge = True
-            new_dir = "SHORT" if direction == "LONG" else "LONG"
+        # 🔁 HEDGE SYSTEM (STRONG)
+        if pnl_main < -0.02 and not hedge_open:
+            hedge_open = True
+            hedge_direction = "SHORT" if direction == "LONG" else "LONG"
+            hedge_margin = base_margin * 2   # 🔥 nguvu mara 2
 
             send(f"""🔁 HEDGE ACTIVATED
 
-Switch → {new_dir}
+Direction → {hedge_direction}
+💰 Hedge Margin: ${round(hedge_margin,2)}
 """)
 
-        # TAKE PROFIT
-        if pnl > 0.05:
+        # HEDGE PNL
+        if hedge_open:
+            if hedge_direction == "LONG":
+                pnl_hedge = (price - entry)/entry * hedge_margin * LEVERAGE
+            else:
+                pnl_hedge = (entry - price)/entry * hedge_margin * LEVERAGE
+
+            total_pnl = pnl_main + pnl_hedge
+
+        # 📊 LIVE STATUS
+        if i % 10 == 0:
+            send(f"""📊 STATUS
+
+Main: {round(pnl_main,3)}
+Total: {round(total_pnl,3)}
+""")
+
+        # 🎯 EXIT PROFIT
+        if total_pnl > 0.05:
             send(f"""🏁 PROFIT CLOSED
 
-💰 +${round(pnl,2)}
+💰 +${round(total_pnl,2)}
+""")
+            return
+
+        # 🛑 LOSS CONTROL
+        if total_pnl < -0.1:
+            send(f"""🛑 STOP LOSS
+
+Loss: ${round(total_pnl,2)}
 """)
             return
 
@@ -109,7 +137,7 @@ def get_balance():
     return 4
 
 def main():
-    send("🤖 V12.1 BOT ACTIVE (24/7) 🚀")
+    send("🤖 V13 REAL HEDGE BOT ACTIVE 🚀")
 
     while True:
         try:
