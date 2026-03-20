@@ -7,7 +7,7 @@ CHAT_ID = os.getenv("CHAT_ID")
 
 URL = f"https://api.telegram.org/bot{TOKEN}"
 
-# ===== SETTINGS =====
+# SETTINGS
 MARGIN_BASE = 10
 LEVERAGE = 10
 COOLDOWN = 5
@@ -21,7 +21,7 @@ COINS = [
 price_cache = {}
 last_trade_time = 0
 
-# ===== TELEGRAM =====
+# TELEGRAM
 def send(msg):
     try:
         requests.post(f"{URL}/sendMessage", data={
@@ -31,7 +31,7 @@ def send(msg):
     except:
         pass
 
-# ===== PRICE =====
+# PRICE
 def get_price(symbol):
     try:
         res = requests.get(
@@ -42,7 +42,7 @@ def get_price(symbol):
     except:
         return None
 
-# ===== SCANNER =====
+# SCANNER (PERCENT BASED 🔥)
 def get_best_coin():
     best_coin = None
     best_move = 0
@@ -53,17 +53,20 @@ def get_best_coin():
             continue
 
         if coin in price_cache:
-            move = abs(price - price_cache[coin])
+            prev = price_cache[coin]
 
-            if move > best_move:
-                best_move = move
-                best_coin = coin
+            if prev > 0:
+                move_percent = abs((price - prev) / prev)
+
+                if move_percent > best_move:
+                    best_move = move_percent
+                    best_coin = coin
 
         price_cache[coin] = price
 
     return best_coin
 
-# ===== TRADE ENGINE =====
+# TRADE ENGINE
 def trade(symbol):
     global last_trade_time
 
@@ -71,7 +74,6 @@ def trade(symbol):
     if not price:
         return
 
-    # direction
     prev = price_cache.get(symbol, price)
     direction = "LONG" if price > prev else "SHORT"
 
@@ -98,7 +100,7 @@ def trade(symbol):
         if not current:
             continue
 
-        # ===== LONG =====
+        # LONG
         if direction == "LONG":
             tp = entry * 1.0006
             sl = entry * 0.9994
@@ -127,7 +129,7 @@ def trade(symbol):
 📥 Entry: {round(entry,2)}
 """)
 
-        # ===== SHORT =====
+        # SHORT
         else:
             tp = entry * 0.9994
             sl = entry * 1.0006
@@ -160,9 +162,9 @@ def trade(symbol):
 
     last_trade_time = time.time()
 
-# ===== MAIN =====
+# MAIN
 def main():
-    send("🤖 Smart Futures Bot Started 🚀")
+    send("🤖 Smart Futures Bot V3 Active 🚀")
 
     while True:
         now = time.time()
