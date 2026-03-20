@@ -144,4 +144,86 @@ Direction → {hedge_direction}
 
             total_pnl = pnl_main + pnl_hedge
 
-        if i
+        if i % 10 == 0:
+            send(f"""📊 STATUS
+
+Main: {round(pnl_main,3)}
+Total: {round(total_pnl,3)}
+💰 Session Profit: ${round(total_profit,3)}
+""")
+
+        if total_pnl > peak_profit:
+            peak_profit = total_pnl
+
+        # QUICK PROFIT
+        if total_pnl > 0.02:
+            total_profit += total_pnl
+            send(f"""🏁 PROFIT LOCKED
+
+💰 Trade: +${round(total_pnl,3)}
+📊 Total: ${round(total_profit,3)}
+""")
+            return
+
+        # TRAILING
+        if peak_profit > 0.02 and total_pnl < peak_profit * 0.6:
+            total_profit += total_pnl
+            send(f"""🔒 TRAILING EXIT
+
+💰 Trade: +${round(total_pnl,3)}
+📊 Total: ${round(total_profit,3)}
+""")
+            return
+
+        # STOP LOSS
+        if total_pnl < -0.1:
+            total_profit += total_pnl
+            send(f"""🛑 STOP LOSS
+
+Loss: ${round(total_pnl,2)}
+📊 Total: ${round(total_profit,3)}
+""")
+            return
+
+        time.sleep(1)
+
+    send("⏹ EXIT (timeout)")
+
+def main():
+    global total_profit, start_day
+
+    send("🤖 V16 ELITE BOT ACTIVE 🚀")
+
+    while True:
+        try:
+            today = datetime.utcnow().day
+
+            if today != start_day:
+                total_profit = 0
+                start_day = today
+
+            if total_profit >= DAILY_TARGET:
+                send(f"""🛑 DAILY TARGET REACHED
+
+💰 Total: ${round(total_profit,2)}
+Bot paused
+""")
+                time.sleep(3600)
+                continue
+
+            balance = 4
+
+            if balance < 1:
+                time.sleep(60)
+                continue
+
+            trade(balance)
+
+            time.sleep(20)
+
+        except Exception as e:
+            send(f"🔥 ERROR: {str(e)}")
+            time.sleep(10)
+
+if __name__ == "__main__":
+    main()
