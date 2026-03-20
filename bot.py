@@ -1,24 +1,14 @@
 import requests
 import time
 import os
-import hmac
-import hashlib
-import base64
 from datetime import datetime
 
-# ===== ENV =====
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-KUCOIN_KEY = os.getenv("KUCOIN_KEY")
-KUCOIN_SECRET = os.getenv("KUCOIN_SECRET")
-KUCOIN_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
-
-# ===== SETTINGS =====
 SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT"]
 LEVERAGE = 20
 
-# ===== TELEGRAM =====
 def send(msg):
     try:
         requests.post(
@@ -28,12 +18,10 @@ def send(msg):
     except:
         pass
 
-# ===== TIME =====
 def trading_time():
     hour = (datetime.utcnow().hour + 3) % 24
     return 4 <= hour < 22
 
-# ===== PRICE =====
 def get_price(symbol):
     try:
         r = requests.get(
@@ -44,22 +32,35 @@ def get_price(symbol):
     except:
         return None
 
-# ===== SIMPLE TREND =====
+def pick_symbol():
+    best = None
+    best_move = 0
+
+    for s in SYMBOLS:
+        p1 = get_price(s)
+        time.sleep(1)
+        p2 = get_price(s)
+
+        move = abs(p2 - p1)
+
+        if move > best_move:
+            best_move = move
+            best = s
+
+    return best
+
 def get_direction(symbol):
     p1 = get_price(symbol)
     time.sleep(2)
     p2 = get_price(symbol)
 
-    if p2 > p1:
-        return "LONG"
-    else:
-        return "SHORT"
+    return "LONG" if p2 > p1 else "SHORT"
 
-# ===== TRADE ENGINE =====
-def trade(symbol, balance):
-    margin = balance * 0.3  # 30% kutumia
-
+def trade(balance):
+    symbol = pick_symbol()
     direction = get_direction(symbol)
+
+    margin = balance * 0.5
     entry = get_price(symbol)
 
     send(f"""🚀 TRADE START
@@ -73,9 +74,9 @@ def trade(symbol, balance):
 📥 Entry: {entry}
 """)
 
-    hedge_opened = False
+    hedge = False
 
-    for i in range(40):  # ~40 seconds monitoring
+    for i in range(120):  # 2 minutes
         price = get_price(symbol)
 
         if direction == "LONG":
@@ -83,35 +84,37 @@ def trade(symbol, balance):
         else:
             pnl = (entry - price)/entry * margin * LEVERAGE
 
-        # 🔥 HEDGE (ikiwa inakosea)
-        if pnl < -0.02 and not hedge_opened:
-            hedge_opened = True
+        # LIVE STATUS
+        if i % 10 == 0:
+            send(f"📊 RUNNING PNL: ${round(pnl,3)}")
+
+        # HEDGE
+        if pnl < -0.01 and not hedge:
+            hedge = True
             new_dir = "SHORT" if direction == "LONG" else "LONG"
 
-            send(f"""🔁 HEDGE OPEN
+            send(f"""🔁 HEDGE ACTIVATED
 
 Switch → {new_dir}
 """)
 
-        # 🎯 TAKE PROFIT
+        # TAKE PROFIT
         if pnl > 0.05:
-            send(f"""🏁 TAKE PROFIT
+            send(f"""🏁 PROFIT CLOSED
 
-Profit: +${round(pnl,2)}
+💰 +${round(pnl,2)}
 """)
             return
 
         time.sleep(1)
 
-    send("⏹ EXIT (time end)")
+    send("⏹ EXIT (timeout)")
 
-# ===== BALANCE (SIMULATION FOR NOW) =====
 def get_balance():
-    return 4  # unaweza kubadilisha baadaye
+    return 4
 
-# ===== MAIN =====
 def main():
-    send("🤖 V11 PRO BOT ACTIVE 🚀")
+    send("🤖 V12 CORE BOT ACTIVE 🚀")
 
     while True:
         try:
@@ -121,11 +124,14 @@ def main():
 
             balance = get_balance()
 
-            for symbol in SYMBOLS:
-                trade(symbol, balance)
-                time.sleep(10)
+            if balance < 1:
+                send("⚠️ Balance ndogo")
+                time.sleep(60)
+                continue
 
-            time.sleep(30)
+            trade(balance)
+
+            time.sleep(20)
 
         except Exception as e:
             send(f"🔥 ERROR: {str(e)}")
