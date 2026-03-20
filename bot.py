@@ -19,6 +19,7 @@ COINS = [
 ]
 
 price_cache = {}
+price_history = {}  # 🔥 muhimu kwa ticks
 last_trade_time = 0
 
 # TELEGRAM
@@ -42,7 +43,37 @@ def get_price(symbol):
     except:
         return None
 
-# SCANNER (PERCENT BASED 🔥)
+# ===== UPDATE HISTORY =====
+def update_history(symbol, price):
+    if symbol not in price_history:
+        price_history[symbol] = []
+
+    price_history[symbol].append(price)
+
+    if len(price_history[symbol]) > 5:
+        price_history[symbol].pop(0)
+
+# ===== CHECK MOMENTUM (5 TICKS) =====
+def get_direction(symbol):
+    if symbol not in price_history:
+        return None
+
+    history = price_history[symbol]
+
+    if len(history) < 5:
+        return None
+
+    # LONG
+    if all(history[i] < history[i+1] for i in range(4)):
+        return "LONG"
+
+    # SHORT
+    if all(history[i] > history[i+1] for i in range(4)):
+        return "SHORT"
+
+    return None
+
+# ===== SCANNER (PERCENT BASED) =====
 def get_best_coin():
     best_coin = None
     best_move = 0
@@ -51,6 +82,8 @@ def get_best_coin():
         price = get_price(coin)
         if not price:
             continue
+
+        update_history(coin, price)
 
         if coin in price_cache:
             prev = price_cache[coin]
@@ -66,16 +99,13 @@ def get_best_coin():
 
     return best_coin
 
-# TRADE ENGINE
-def trade(symbol):
+# ===== TRADE ENGINE =====
+def trade(symbol, direction):
     global last_trade_time
 
     price = get_price(symbol)
     if not price:
         return
-
-    prev = price_cache.get(symbol, price)
-    direction = "LONG" if price > prev else "SHORT"
 
     margin = MARGIN_BASE
     position = margin * LEVERAGE
@@ -162,9 +192,9 @@ def trade(symbol):
 
     last_trade_time = time.time()
 
-# MAIN
+# ===== MAIN =====
 def main():
-    send("🤖 Smart Futures Bot V3 Active 🚀")
+    send("🤖 Smart Futures Bot V4 Active 🚀")
 
     while True:
         now = time.time()
@@ -176,9 +206,12 @@ def main():
         symbol = get_best_coin()
 
         if symbol:
-            trade(symbol)
+            direction = get_direction(symbol)
 
-        time.sleep(2)
+            if direction:
+                trade(symbol, direction)
+
+        time.sleep(1)
 
 # RUN
 if __name__ == "__main__":
