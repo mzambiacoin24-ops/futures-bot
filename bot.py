@@ -26,7 +26,6 @@ def get_price(symbol):
         ).json()
 
         price = r.get("data", {}).get("price", None)
-
         if price is None:
             return None
 
@@ -35,39 +34,54 @@ def get_price(symbol):
     except:
         return None
 
+# 🔥 SMART ENTRY (NEW)
+def analyze_market(symbol):
+    prices = []
+
+    for _ in range(5):
+        p = get_price(symbol)
+        if p is None:
+            return None, None
+        prices.append(p)
+        time.sleep(1)
+
+    move = max(prices) - min(prices)
+
+    # volatility check
+    if move < 0.05:
+        return None, None
+
+    # trend check
+    if prices[-1] > prices[0]:
+        return "LONG", move
+    else:
+        return "SHORT", move
+
 def pick_symbol():
-    best = None
+    best_symbol = None
     best_move = 0
+    best_direction = None
 
     for s in SYMBOLS:
-        p1 = get_price(s)
-        time.sleep(1)
-        p2 = get_price(s)
+        direction, move = analyze_market(s)
 
-        if p1 is None or p2 is None:
+        if direction is None:
             continue
-
-        move = abs(p2 - p1)
 
         if move > best_move:
             best_move = move
-            best = s
+            best_symbol = s
+            best_direction = direction
 
-    return best if best else SYMBOLS[0]
-
-def get_direction(symbol):
-    p1 = get_price(symbol)
-    time.sleep(2)
-    p2 = get_price(symbol)
-
-    if p1 is None or p2 is None:
-        return "LONG"
-
-    return "LONG" if p2 > p1 else "SHORT"
+    return best_symbol, best_direction
 
 def trade(balance):
-    symbol = pick_symbol()
-    direction = get_direction(symbol)
+    symbol, direction = pick_symbol()
+
+    if symbol is None:
+        send("⏳ No strong market, waiting...")
+        time.sleep(10)
+        return
 
     base_margin = balance * 0.3
     entry = get_price(symbol)
@@ -105,6 +119,7 @@ def trade(balance):
 
         total_pnl = pnl_main
 
+        # HEDGE
         if pnl_main < -0.02 and not hedge_open:
             hedge_open = True
             hedge_direction = "SHORT" if direction == "LONG" else "LONG"
@@ -124,6 +139,7 @@ Direction → {hedge_direction}
 
             total_pnl = pnl_main + pnl_hedge
 
+        # STATUS
         if i % 10 == 0:
             send(f"""📊 STATUS
 
@@ -134,6 +150,7 @@ Total: {round(total_pnl,3)}
         if total_pnl > peak_profit:
             peak_profit = total_pnl
 
+        # QUICK PROFIT
         if total_pnl > 0.02:
             send(f"""🏁 QUICK PROFIT
 
@@ -141,6 +158,7 @@ Total: {round(total_pnl,3)}
 """)
             return
 
+        # TRAILING EXIT
         if peak_profit > 0.02 and total_pnl < peak_profit * 0.6:
             send(f"""🔒 TRAILING EXIT
 
@@ -149,6 +167,7 @@ Exit: {round(total_pnl,3)}
 """)
             return
 
+        # STOP LOSS
         if total_pnl < -0.1:
             send(f"""🛑 STOP LOSS
 
@@ -164,7 +183,7 @@ def get_balance():
     return 4
 
 def main():
-    send("🤖 V14.1 STABLE BOT ACTIVE 🚀")
+    send("🤖 V15 SMART ENTRY BOT ACTIVE 🚀")
 
     while True:
         try:
