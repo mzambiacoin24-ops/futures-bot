@@ -21,9 +21,17 @@ def get_price(symbol):
     try:
         r = requests.get(
             "https://api.kucoin.com/api/v1/market/orderbook/level1",
-            params={"symbol": symbol}
+            params={"symbol": symbol},
+            timeout=5
         ).json()
-        return float(r["data"]["price"])
+
+        price = r.get("data", {}).get("price", None)
+
+        if price is None:
+            return None
+
+        return float(price)
+
     except:
         return None
 
@@ -36,18 +44,24 @@ def pick_symbol():
         time.sleep(1)
         p2 = get_price(s)
 
+        if p1 is None or p2 is None:
+            continue
+
         move = abs(p2 - p1)
 
         if move > best_move:
             best_move = move
             best = s
 
-    return best
+    return best if best else SYMBOLS[0]
 
 def get_direction(symbol):
     p1 = get_price(symbol)
     time.sleep(2)
     p2 = get_price(symbol)
+
+    if p1 is None or p2 is None:
+        return "LONG"
 
     return "LONG" if p2 > p1 else "SHORT"
 
@@ -57,6 +71,10 @@ def trade(balance):
 
     base_margin = balance * 0.3
     entry = get_price(symbol)
+
+    if entry is None:
+        send("⚠️ Price error, retry...")
+        return
 
     send(f"""🚀 TRADE START
 
@@ -72,13 +90,14 @@ def trade(balance):
     hedge_open = False
     hedge_direction = None
     hedge_margin = 0
-
     peak_profit = 0
 
-    for i in range(180):  # ~3 minutes
+    for i in range(180):
         price = get_price(symbol)
 
-        # MAIN PNL
+        if price is None:
+            continue
+
         if direction == "LONG":
             pnl_main = (price - entry)/entry * base_margin * LEVERAGE
         else:
@@ -86,7 +105,6 @@ def trade(balance):
 
         total_pnl = pnl_main
 
-        # 🔁 HEDGE
         if pnl_main < -0.02 and not hedge_open:
             hedge_open = True
             hedge_direction = "SHORT" if direction == "LONG" else "LONG"
@@ -98,7 +116,6 @@ Direction → {hedge_direction}
 💰 Hedge Margin: ${round(hedge_margin,2)}
 """)
 
-        # HEDGE PNL
         if hedge_open:
             if hedge_direction == "LONG":
                 pnl_hedge = (price - entry)/entry * hedge_margin * LEVERAGE
@@ -107,7 +124,6 @@ Direction → {hedge_direction}
 
             total_pnl = pnl_main + pnl_hedge
 
-        # 📊 STATUS
         if i % 10 == 0:
             send(f"""📊 STATUS
 
@@ -115,11 +131,9 @@ Main: {round(pnl_main,3)}
 Total: {round(total_pnl,3)}
 """)
 
-        # 🔥 TRACK PROFIT PEAK
         if total_pnl > peak_profit:
             peak_profit = total_pnl
 
-        # 🎯 QUICK PROFIT LOCK
         if total_pnl > 0.02:
             send(f"""🏁 QUICK PROFIT
 
@@ -127,7 +141,6 @@ Total: {round(total_pnl,3)}
 """)
             return
 
-        # 🔥 TRAILING EXIT (IMPORTANT)
         if peak_profit > 0.02 and total_pnl < peak_profit * 0.6:
             send(f"""🔒 TRAILING EXIT
 
@@ -136,7 +149,6 @@ Exit: {round(total_pnl,3)}
 """)
             return
 
-        # 🛑 HARD STOP LOSS
         if total_pnl < -0.1:
             send(f"""🛑 STOP LOSS
 
@@ -152,7 +164,7 @@ def get_balance():
     return 4
 
 def main():
-    send("🤖 V14 PROFIT LOCK BOT ACTIVE 🚀")
+    send("🤖 V14.1 STABLE BOT ACTIVE 🚀")
 
     while True:
         try:
