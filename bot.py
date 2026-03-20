@@ -5,7 +5,6 @@ import hmac
 import hashlib
 import base64
 from datetime import datetime
-import random
 
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -15,6 +14,8 @@ KUCOIN_SECRET = os.getenv("KUCOIN_SECRET")
 KUCOIN_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
 
 BASE_URL = "https://api-futures.kucoin.com"
+
+active_trade = False  # 🔥 muhimu kwa hedging
 
 def send(msg):
     try:
@@ -53,15 +54,11 @@ def trading_time():
 def get_balance():
     endpoint = "/api/v1/account-overview?currency=USDT"
     headers = sign("GET", endpoint)
-
     try:
         res = requests.get(BASE_URL + endpoint, headers=headers).json()
-
         if res.get("code") != "200000":
             return 0
-
         return float(res["data"]["availableBalance"])
-
     except:
         return 0
 
@@ -76,6 +73,9 @@ def get_price(symbol):
         return None
 
 def trade(symbol, direction, margin):
+    global active_trade
+    active_trade = True
+
     entry = get_price(symbol)
 
     send(f"""🚀 TRADE START
@@ -89,7 +89,6 @@ def trade(symbol, direction, margin):
 📥 Entry: {entry}
 """)
 
-    # HOLD TIME (30 sec)
     time.sleep(30)
 
     exit_price = get_price(symbol)
@@ -101,8 +100,10 @@ def trade(symbol, direction, margin):
 
     send(f"🏁 CLOSED +${round(profit,2)}")
 
+    active_trade = False  # 🔥 trade imeisha
+
 def main():
-    send("🤖 V10.7 HEDGING BOT ACTIVE 🇹🇿🚀")
+    send("🤖 V10.8 HEDGE BASE BOT ACTIVE 🇹🇿")
 
     while True:
         try:
@@ -110,23 +111,22 @@ def main():
                 time.sleep(60)
                 continue
 
+            if active_trade:
+                time.sleep(5)
+                continue
+
             balance = get_balance()
 
             if balance <= 1:
-                send(f"⚠️ Balance: ${balance}")
                 time.sleep(60)
                 continue
 
             margin = balance * 0.5
 
-            coin = "BTC-USDT"
+            # 👇 bado LONG kwa sasa (hatujafanya hedge bado)
+            trade("BTC-USDT", "LONG", margin)
 
-            # 🔥 HEDGING (random direction)
-            direction = random.choice(["LONG", "SHORT"])
-
-            trade(coin, direction, margin)
-
-            time.sleep(60)
+            time.sleep(5)
 
         except Exception as e:
             send(f"🔥 ERROR: {str(e)}")
