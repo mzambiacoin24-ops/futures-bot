@@ -1,12 +1,18 @@
 import requests
 import time
 import os
+from datetime import datetime
 
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT"]
 LEVERAGE = 20
+
+DAILY_TARGET = 2  # unaweza badilisha baadaye
+
+total_profit = 0
+start_day = datetime.utcnow().day
 
 def send(msg):
     try:
@@ -34,7 +40,6 @@ def get_price(symbol):
     except:
         return None
 
-# 🔥 SMART ENTRY (NEW)
 def analyze_market(symbol):
     prices = []
 
@@ -47,11 +52,9 @@ def analyze_market(symbol):
 
     move = max(prices) - min(prices)
 
-    # volatility check
     if move < 0.05:
         return None, None
 
-    # trend check
     if prices[-1] > prices[0]:
         return "LONG", move
     else:
@@ -76,6 +79,8 @@ def pick_symbol():
     return best_symbol, best_direction
 
 def trade(balance):
+    global total_profit
+
     symbol, direction = pick_symbol()
 
     if symbol is None:
@@ -84,10 +89,10 @@ def trade(balance):
         return
 
     base_margin = balance * 0.3
+    position_size = base_margin * LEVERAGE
     entry = get_price(symbol)
 
     if entry is None:
-        send("⚠️ Price error, retry...")
         return
 
     send(f"""🚀 TRADE START
@@ -96,7 +101,8 @@ def trade(balance):
 📍 {direction}
 
 💰 Margin: ${round(base_margin,2)}
-⚡ x{LEVERAGE}
+⚡ Leverage: x{LEVERAGE}
+📦 Position: ${round(position_size,2)}
 
 📥 Entry: {entry}
 """)
@@ -119,7 +125,6 @@ def trade(balance):
 
         total_pnl = pnl_main
 
-        # HEDGE
         if pnl_main < -0.02 and not hedge_open:
             hedge_open = True
             hedge_direction = "SHORT" if direction == "LONG" else "LONG"
@@ -139,68 +144,4 @@ Direction → {hedge_direction}
 
             total_pnl = pnl_main + pnl_hedge
 
-        # STATUS
-        if i % 10 == 0:
-            send(f"""📊 STATUS
-
-Main: {round(pnl_main,3)}
-Total: {round(total_pnl,3)}
-""")
-
-        if total_pnl > peak_profit:
-            peak_profit = total_pnl
-
-        # QUICK PROFIT
-        if total_pnl > 0.02:
-            send(f"""🏁 QUICK PROFIT
-
-💰 +${round(total_pnl,3)}
-""")
-            return
-
-        # TRAILING EXIT
-        if peak_profit > 0.02 and total_pnl < peak_profit * 0.6:
-            send(f"""🔒 TRAILING EXIT
-
-Peak: {round(peak_profit,3)}
-Exit: {round(total_pnl,3)}
-""")
-            return
-
-        # STOP LOSS
-        if total_pnl < -0.1:
-            send(f"""🛑 STOP LOSS
-
-Loss: ${round(total_pnl,2)}
-""")
-            return
-
-        time.sleep(1)
-
-    send("⏹ EXIT (timeout)")
-
-def get_balance():
-    return 4
-
-def main():
-    send("🤖 V15 SMART ENTRY BOT ACTIVE 🚀")
-
-    while True:
-        try:
-            balance = get_balance()
-
-            if balance < 1:
-                send("⚠️ Balance ndogo")
-                time.sleep(60)
-                continue
-
-            trade(balance)
-
-            time.sleep(20)
-
-        except Exception as e:
-            send(f"🔥 ERROR: {str(e)}")
-            time.sleep(10)
-
-if __name__ == "__main__":
-    main()
+        if i
