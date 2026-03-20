@@ -6,7 +6,7 @@ TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 # SETTINGS
-MARGIN = 10  # fixed $
+MARGIN = 10
 LEVERAGE = 10
 COOLDOWN = 30
 
@@ -14,13 +14,14 @@ SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT"]
 
 last_trade_time = 0
 last_price = {}
+last_signal = {}
 
-# ===== TELEGRAM FUNCTION =====
+# ===== TELEGRAM =====
 def send(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
-# ===== PRICE FETCH =====
+# ===== PRICE =====
 def get_price(symbol):
     try:
         url = f"https://api.kucoin.com/api/v1/market/orderbook/level1?symbol={symbol}"
@@ -29,9 +30,9 @@ def get_price(symbol):
     except:
         return None
 
-# ===== SIGNAL LOGIC =====
+# ===== SIGNAL =====
 def check_signal(symbol, price):
-    global last_price
+    global last_price, last_signal
 
     if symbol not in last_price:
         last_price[symbol] = price
@@ -40,25 +41,34 @@ def check_signal(symbol, price):
     prev = last_price[symbol]
     last_price[symbol] = price
 
-    # breakout logic
+    signal = None
+
     if price > prev * 1.001:
-        return "LONG"
+        signal = "LONG"
     elif price < prev * 0.999:
-        return "SHORT"
-    else:
+        signal = "SHORT"
+
+    # avoid duplicate signals
+    if symbol in last_signal and last_signal[symbol] == signal:
         return None
 
-# ===== TRADE EXECUTION (PAPER) =====
+    if signal:
+        last_signal[symbol] = signal
+
+    return signal
+
+# ===== TRADE =====
 def trade(symbol, side, price):
     global last_trade_time
 
     position_size = MARGIN * LEVERAGE
 
+    # BTC special TP
     if symbol == "BTC-USDT":
-        tp_percent = 0.002  # 0.2%
+        tp_percent = 0.002
         sl_percent = 0.002
     else:
-        tp_percent = 0.004  # 0.4%
+        tp_percent = 0.004
         sl_percent = 0.004
 
     if side == "LONG":
@@ -68,7 +78,7 @@ def trade(symbol, side, price):
         tp = price * (1 - tp_percent)
         sl = price * (1 + sl_percent)
 
-    # MESSAGE ENTRY
+    # ENTRY MESSAGE
     send(f"""🚀 NEW TRADE
 
 📊 {symbol}
@@ -76,25 +86,28 @@ def trade(symbol, side, price):
 
 💰 Margin: ${MARGIN}
 ⚡ Leverage: x{LEVERAGE}
-📦 Position Size: ${position_size}
+📦 Position: ${position_size}
 
 📥 Entry: {round(price,2)}
 🎯 TP: {round(tp,2)}
 🛑 SL: {round(sl,2)}
 """)
 
-    # ===== MONITOR TRADE =====
+    # MONITOR
     while True:
         current = get_price(symbol)
         if current is None:
             continue
 
+        # LONG
         if side == "LONG":
             if current >= tp:
                 profit = (tp - price) / price * position_size
                 send(f"""🎯 TP HIT
 
 📊 {symbol}
+📍 LONG
+
 💰 Profit: +${round(profit,2)}
 ⚡ Leverage: x{LEVERAGE}
 📦 Position: ${position_size}
@@ -106,16 +119,21 @@ def trade(symbol, side, price):
                 send(f"""🛑 SL HIT
 
 📊 {symbol}
+📍 LONG
+
 ❌ Loss: -${round(loss,2)}
 """)
                 break
 
-        else:  # SHORT
+        # SHORT
+        else:
             if current <= tp:
                 profit = (price - tp) / price * position_size
                 send(f"""🎯 TP HIT
 
 📊 {symbol}
+📍 SHORT
+
 💰 Profit: +${round(profit,2)}
 ⚡ Leverage: x{LEVERAGE}
 📦 Position: ${position_size}
@@ -127,6 +145,8 @@ def trade(symbol, side, price):
                 send(f"""🛑 SL HIT
 
 📊 {symbol}
+📍 SHORT
+
 ❌ Loss: -${round(loss,2)}
 """)
                 break
@@ -135,14 +155,13 @@ def trade(symbol, side, price):
 
     last_trade_time = time.time()
 
-# ===== MAIN LOOP =====
+# ===== MAIN =====
 def main():
     send("🤖 Futures Bot Active! Ready to trade 🚀")
 
     while True:
         now = time.time()
 
-        # cooldown
         if now - last_trade_time < COOLDOWN:
             time.sleep(2)
             continue
