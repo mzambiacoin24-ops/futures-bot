@@ -1,7 +1,6 @@
 import requests
 import time
 import os
-from datetime import datetime
 
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -17,10 +16,6 @@ def send(msg):
         )
     except:
         pass
-
-def trading_time():
-    hour = (datetime.utcnow().hour + 3) % 24
-    return 4 <= hour < 22
 
 def get_price(symbol):
     try:
@@ -76,7 +71,7 @@ def trade(balance):
 
     hedge = False
 
-    for i in range(120):  # 2 minutes
+    for i in range(120):  # ~2 minutes
         price = get_price(symbol)
 
         if direction == "LONG":
@@ -84,7 +79,7 @@ def trade(balance):
         else:
             pnl = (entry - price)/entry * margin * LEVERAGE
 
-        # LIVE STATUS
+        # LIVE PNL
         if i % 10 == 0:
             send(f"📊 RUNNING PNL: ${round(pnl,3)}")
 
@@ -114,14 +109,10 @@ def get_balance():
     return 4
 
 def main():
-    send("🤖 V12 CORE BOT ACTIVE 🚀")
+    send("🤖 V12.1 BOT ACTIVE (24/7) 🚀")
 
     while True:
         try:
-            if not trading_time():
-                time.sleep(60)
-                continue
-
             balance = get_balance()
 
             if balance < 1:
