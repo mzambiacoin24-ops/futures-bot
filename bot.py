@@ -88,7 +88,7 @@ def trade(symbol, direction, margin):
 📥 Entry: {entry}
 """)
 
-    time.sleep(5)
+    time.sleep(30)
 
     exit_price = get_price(symbol)
 
