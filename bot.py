@@ -92,11 +92,12 @@ def get_position(symbol):
 
     return None
 
-# ✅ ORDER WITH CHECK
+# ✅ FIXED ORDER (clientOid added)
 def place_order(symbol, side, size):
     endpoint = "/api/v1/orders"
 
     body = {
+        "clientOid": str(int(time.time()*1000)),
         "symbol": symbol,
         "side": side,
         "type": "market",
@@ -163,8 +164,6 @@ def trade():
 
     margin = balance * 0.3
     position_value = margin * LEVERAGE
-
-    # ✅ FIX SIZE (never 0)
     size = max(1, int(position_value / price))
 
     trade_active = True
@@ -195,13 +194,12 @@ def trade():
         trade_active = False
         return
 
-    send("✅ Position detected — tracking...")
+    send("✅ Position detected")
 
     while True:
         pos = get_position(symbol)
 
         if pos is None:
-            send("⚠️ Position imefungwa")
             trade_active = False
             return
 
@@ -227,7 +225,7 @@ def trade():
         time.sleep(2)
 
 def main():
-    send("🤖 V27 TRUE EXECUTION BOT ACTIVE 💰")
+    send("🤖 V28 FINAL REAL BOT LIVE 💰")
 
     while True:
         try:
