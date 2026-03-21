@@ -1,9 +1,6 @@
 import requests, time, json, hmac, hashlib, base64, uuid
 
-# ==============================
-# 🔑 WEKA TAARIFA ZAKO HAPA
-# ==============================
-
+# ========= WEKA HAPA =========
 API_KEY = "69bd80471b35dd00017afdfb"
 API_SECRET = "e6c7a53e-a25c-4edc-b52e-7f28bd4df1d9"
 API_PASSPHRASE = "bot1234"
@@ -11,37 +8,24 @@ API_PASSPHRASE = "bot1234"
 TELEGRAM_TOKEN = "8787267026:AAHjMfzdg9JwVxdCo6pnoiNq2o1xvU2pC30"
 CHAT_ID = "7010983039"
 
-# ==============================
-# ⚙️ SETTINGS
-# ==============================
-
 BASE_URL = "https://api-futures.kucoin.com"
 
 SYMBOL = "ADAUSDTM"
-LEVERAGE = 5
+LEVERAGE = 3
 SIZE = "1"
 
-TP_DIFF = 0.0015   # balanced profit
-SL_DIFF = 0.0012   # risk control
+TP_DIFF = 0.0015
+SL_DIFF = 0.0012
 
-COOLDOWN = 60  # sekunde 60
-
-# ==============================
-# TELEGRAM
-# ==============================
+COOLDOWN = 60
+# ============================
 
 def send(msg):
-    requests.post(
-        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-        data={"chat_id": CHAT_ID, "text": msg}
-    )
+    requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                  data={"chat_id": CHAT_ID, "text": msg})
 
-# ==============================
-# SIGN
-# ==============================
-
-def headers(method, endpoint, body=""):
-    now = str(int(time.time() * 1000))
+def sign(method, endpoint, body=""):
+    now = str(int(time.time()*1000))
     str_to_sign = now + method + endpoint + body
 
     signature = base64.b64encode(
@@ -61,40 +45,24 @@ def headers(method, endpoint, body=""):
         "Content-Type": "application/json"
     }
 
-# ==============================
-# PRICE
-# ==============================
-
 def get_price():
-    r = requests.get(BASE_URL + "/api/v1/ticker", params={"symbol": SYMBOL}).json()
+    r = requests.get(BASE_URL+"/api/v1/ticker", params={"symbol": SYMBOL}).json()
     return float(r["data"]["price"])
 
-# ==============================
-# POSITION
-# ==============================
-
-def get_position():
-    r = requests.get(BASE_URL + "/api/v1/positions", headers=headers("GET","/api/v1/positions")).json()
+def has_position():
+    r = requests.get(BASE_URL+"/api/v1/positions", headers=sign("GET","/api/v1/positions")).json()
     for p in r.get("data", []):
-        if p["symbol"] == SYMBOL and float(p["currentQty"]) != 0:
-            return p
-    return None
-
-# ==============================
-# LEVERAGE
-# ==============================
+        if float(p["currentQty"]) != 0:
+            return True
+    return False
 
 def set_leverage():
     endpoint = "/api/v1/position/leverage"
     body = json.dumps({"symbol": SYMBOL, "leverage": str(LEVERAGE)})
-    requests.post(BASE_URL+endpoint, headers=headers("POST",endpoint,body), data=body)
-
-# ==============================
-# OPEN TRADE
-# ==============================
+    requests.post(BASE_URL+endpoint, headers=sign("POST",endpoint,body), data=body)
 
 def open_trade(side):
-    if get_position():
+    if has_position():
         return None
 
     set_leverage()
@@ -108,105 +76,75 @@ def open_trade(side):
         tp = entry - TP_DIFF
         sl = entry + SL_DIFF
 
-    endpoint = "/api/v1/orders"
-
     body = json.dumps({
         "clientOid": str(uuid.uuid4()),
         "symbol": SYMBOL,
-        "side": "buy" if side == "LONG" else "sell",
+        "side": "buy" if side=="LONG" else "sell",
         "type": "market",
         "size": SIZE,
         "marginMode": "CROSS"
     })
 
-    res = requests.post(BASE_URL+endpoint, headers=headers("POST",endpoint,body), data=body).json()
+    res = requests.post(BASE_URL+"/api/v1/orders",
+                        headers=sign("POST","/api/v1/orders",body),
+                        data=body).json()
 
     if res.get("code") == "200000":
         send(f"""🚀 TRADE OPENED
 
 🪙 {SYMBOL}
-📍 Direction: {side}
+📍 {side}
 📊 Entry: {round(entry,6)}
 
 🎯 TP: {round(tp,6)}
 🛑 SL: {round(sl,6)}
-
-⚡ Leverage: x{LEVERAGE}
 """)
-        return side, entry, tp, sl
+        return (side, tp, sl)
 
-    else:
-        send(f"❌ {res}")
-        return None
-
-# ==============================
-# CLOSE
-# ==============================
+    return None
 
 def close_trade(side):
-    endpoint = "/api/v1/orders"
-
-    close_side = "sell" if side == "LONG" else "buy"
-
     body = json.dumps({
         "clientOid": str(uuid.uuid4()),
         "symbol": SYMBOL,
-        "side": close_side,
+        "side": "sell" if side=="LONG" else "buy",
         "type": "market",
         "size": SIZE,
         "reduceOnly": True
     })
 
-    requests.post(BASE_URL+endpoint, headers=headers("POST",endpoint,body), data=body)
-
-# ==============================
-# SIGNAL
-# ==============================
+    requests.post(BASE_URL+"/api/v1/orders",
+                  headers=sign("POST","/api/v1/orders",body),
+                  data=body)
 
 def signal():
     return "LONG" if int(time.time()) % 2 == 0 else "SHORT"
 
-# ==============================
-# MAIN
-# ==============================
+send("🤖 BOT LIVE (SMART MODE)")
 
-send("🤖 BOT LIVE (FINAL MODE)")
-
-current = None
+trade = None
 
 while True:
     try:
-        pos = get_position()
-
-        if pos and current:
+        if has_position() and trade:
             price = get_price()
+            side, tp, sl = trade
 
-            side, entry, tp, sl = current
-
-            if (side == "LONG" and (price >= tp or price <= sl)) or \
-               (side == "SHORT" and (price <= tp or price >= sl)):
+            if (side=="LONG" and (price>=tp or price<=sl)) or \
+               (side=="SHORT" and (price<=tp or price>=sl)):
 
                 close_trade(side)
 
-                pnl = float(pos["unrealisedPnl"])
+                send("💰 TRADE CLOSED")
 
-                send(f"""💰 TRADE CLOSED
-
-🪙 {SYMBOL}
-📊 Exit: {round(price,6)}
-
-💵 Result: {round(pnl,3)} USDT
-""")
-
-                current = None
+                trade = None
                 time.sleep(COOLDOWN)
 
-        elif not pos:
-            side = signal()
-            current = open_trade(side)
+        elif not has_position() and not trade:
+            trade = open_trade(signal())
 
         time.sleep(10)
 
     except Exception as e:
-        send(f"ERROR: {str(e)}")
+        send(f"ERROR: {e}")
         time.sleep(5)
