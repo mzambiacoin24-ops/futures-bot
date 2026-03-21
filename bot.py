@@ -86,7 +86,7 @@ def place_trade(symbol, side):
         "type": "market",
         "leverage": str(LEVERAGE),
         "marginMode": "ISOLATED",
-        "size": SIZE
+        "size": 1
     })
 
     res = requests.post(BASE_URL + endpoint, headers=sign("POST", endpoint, body), data=body).json()
