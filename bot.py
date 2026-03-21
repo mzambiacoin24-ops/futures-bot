@@ -9,8 +9,7 @@ import uuid
 # ====== WEKA HAPA TU ======
 API_KEY = "69bd80471b35dd00017afdfb"
 
-API_SECRET = "e6c7a53e-a25c-4edc-b52e-7f28bd4df1d9
-"
+API_SECRET = "e6c7a53e-a25c-4edc-b52e-7f28bd4df1d9"
 API_PASSPHRASE = "bot1234"
 
 TELEGRAM_TOKEN = "8787267026:AAHjMfzdg9JwVxdCo6pnoiNq2o1xvU2pC30"
