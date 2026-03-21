@@ -1,43 +1,30 @@
-import requests
 import time
-import os
-import base64
-import hmac
+import requests
 import hashlib
+import hmac
+import base64
+import uuid
 import json
 
-API_KEY = os.getenv("KUCOIN_KEY")
-API_SECRET = os.getenv("KUCOIN_SECRET")
-API_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
-
-TOKEN = os.getenv("TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+API_KEY = "69bd80471b35dd00017afdfb"
+API_SECRET = "
+e6c7a53e-a25c-4edc-b52e-7f28bd4df1d9"
+API_PASSPHRASE = "bot1234"
 
 BASE_URL = "https://api-futures.kucoin.com"
 
-LEVERAGE = 20
-TARGET_PROFIT = 0.05
-TOTAL_PROFIT = 0
-trade_active = False
-
-COINS = [
-"BTCUSDTM","ETHUSDTM","SOLUSDTM","LINKUSDTM",
-"AVAXUSDTM","DOGEUSDTM","XRPUSDTM","ADAUSDTM"
+SYMBOLS = [
+    "BTCUSDTM","ETHUSDTM","SOLUSDTM","XRPUSDTM","ADAUSDTM",
+    "DOGEUSDTM","LINKUSDTM","AVAXUSDTM","DOTUSDTM","LTCUSDTM"
 ]
 
-def send(msg):
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg}
-        )
-    except:
-        pass
+LEVERAGE = 20
+MARGIN_USDT = 1.2
+
 
 def sign(method, endpoint, body=""):
     now = str(int(time.time() * 1000))
     str_to_sign = now + method + endpoint + body
-
     signature = base64.b64encode(
         hmac.new(API_SECRET.encode(), str_to_sign.encode(), hashlib.sha256).digest()
     ).decode()
@@ -46,7 +33,7 @@ def sign(method, endpoint, body=""):
         hmac.new(API_SECRET.encode(), API_PASSPHRASE.encode(), hashlib.sha256).digest()
     ).decode()
 
-    return {
+    headers = {
         "KC-API-KEY": API_KEY,
         "KC-API-SIGN": signature,
         "KC-API-TIMESTAMP": now,
@@ -54,187 +41,74 @@ def sign(method, endpoint, body=""):
         "KC-API-KEY-VERSION": "2",
         "Content-Type": "application/json"
     }
+    return headers
+
+
+def set_leverage(symbol):
+    endpoint = "/api/v1/position/leverage"
+    url = BASE_URL + endpoint
+
+    body = json.dumps({
+        "symbol": symbol,
+        "leverage": LEVERAGE,
+        "marginMode": "ISOLATED"
+    })
+
+    headers = sign("POST", endpoint, body)
+    requests.post(url, headers=headers, data=body)
+
+
+def place_trade(symbol, side):
+    endpoint = "/api/v1/orders"
+    url = BASE_URL + endpoint
+
+    client_oid = str(uuid.uuid4())
+
+    body = json.dumps({
+        "clientOid": client_oid,
+        "symbol": symbol,
+        "side": "buy" if side == "LONG" else "sell",
+        "type": "market",
+        "leverage": str(LEVERAGE),
+        "marginMode": "ISOLATED",
+        "size": 1
+    })
+
+    headers = sign("POST", endpoint, body)
+    res = requests.post(url, headers=headers, data=body).json()
+
+    if "code" in res and res["code"] != "200000":
+        print(f"❌ ORDER FAILED: {res}")
+    else:
+        print(f"✅ REAL TRADE: {symbol} {side}")
+
 
 def get_price(symbol):
+    url = BASE_URL + f"/api/v1/ticker?symbol={symbol}"
     try:
-        r = requests.get(BASE_URL + "/api/v1/ticker", params={"symbol": symbol}).json()
-        return float(r["data"]["price"])
+        return float(requests.get(url).json()['data']['price'])
     except:
         return None
 
-def get_balance():
-    endpoint = "/api/v1/account-overview?currency=USDT"
-    headers = sign("GET", endpoint)
-    r = requests.get(BASE_URL + endpoint, headers=headers).json()
 
-    try:
-        return float(r["data"]["availableBalance"])
-    except:
-        return 0
+def scan():
+    while True:
+        print("⚡ scanning fast...")
+        for symbol in SYMBOLS:
+            price = get_price(symbol)
+            if price:
+                # simple logic (scalp)
+                if price % 2 < 1:
+                    set_leverage(symbol)
+                    place_trade(symbol, "LONG")
+                    time.sleep(2)
+                else:
+                    set_leverage(symbol)
+                    place_trade(symbol, "SHORT")
+                    time.sleep(2)
 
-def get_position(symbol):
-    endpoint = f"/api/v1/position?symbol={symbol}"
-    headers = sign("GET", endpoint)
-    r = requests.get(BASE_URL + endpoint, headers=headers).json()
-
-    try:
-        data = r.get("data", {})
-        qty = float(data.get("currentQty", 0))
-
-        if qty != 0:
-            return {
-                "size": abs(qty),
-                "entry": float(data.get("avgEntryPrice", 0)),
-                "pnl": float(data.get("unrealisedPnl", 0))
-            }
-    except:
-        pass
-
-    return None
-
-# ✅ FINAL ORDER FIX
-def place_order(symbol, side, size):
-    endpoint = "/api/v1/orders"
-
-    body = {
-        "clientOid": str(int(time.time()*1000)),
-        "symbol": symbol,
-        "side": side,
-        "type": "market",
-        "size": size,
-        "leverage": str(LEVERAGE),
-        "marginMode": "ISOLATED"   # 🔥 FIX YA MWISHO
-    }
-
-    body_str = json.dumps(body)
-    headers = sign("POST", endpoint, body_str)
-
-    r = requests.post(BASE_URL + endpoint, headers=headers, data=body_str).json()
-
-    if r.get("code") == "200000":
-        send("✅ ORDER SUCCESS")
-        return True
-    else:
-        send(f"❌ ORDER FAILED: {r}")
-        return False
-
-def find_trade():
-    for coin in COINS:
-        p1 = get_price(coin)
-        time.sleep(0.2)
-        p2 = get_price(coin)
-
-        if None in [p1, p2]:
-            continue
-
-        diff = (p2 - p1) / p1
-
-        if diff > 0.0002:
-            return coin, "buy"
-        elif diff < -0.0002:
-            return coin, "sell"
-
-    return None, None
-
-def wait_for_position(symbol):
-    for _ in range(15):
-        pos = get_position(symbol)
-        if pos:
-            return pos
         time.sleep(1)
-    return None
 
-def trade():
-    global trade_active, TOTAL_PROFIT
 
-    if trade_active:
-        return
-
-    symbol, side = find_trade()
-    if symbol is None:
-        return
-
-    balance = get_balance()
-    if balance <= 1:
-        send("⚠️ Balance ndogo")
-        return
-
-    price = get_price(symbol)
-    if price is None:
-        return
-
-    margin = balance * 0.3
-    position_value = margin * LEVERAGE
-    size = max(1, int(position_value / price))
-
-    trade_active = True
-
-    send(f"""🚀 TRADE START
-
-📊 {symbol}
-📍 {side.upper()}
-
-💰 Margin: ${round(margin,2)}
-⚡ Leverage: x{LEVERAGE}
-📦 Position: ${round(position_value,2)}
-
-📥 Entry: {round(price,4)}
-💵 Total Profit: ${round(TOTAL_PROFIT,4)}
-""")
-
-    success = place_order(symbol, side, size)
-
-    if not success:
-        trade_active = False
-        return
-
-    pos = wait_for_position(symbol)
-
-    if pos is None:
-        send("❌ Position haijapatikana")
-        trade_active = False
-        return
-
-    send("✅ Position detected")
-
-    while True:
-        pos = get_position(symbol)
-
-        if pos is None:
-            trade_active = False
-            return
-
-        pnl = pos["pnl"]
-
-        send(f"📊 PNL: ${round(pnl,4)}")
-
-        if pnl >= TARGET_PROFIT:
-            close_side = "sell" if side == "buy" else "buy"
-            place_order(symbol, close_side, pos["size"])
-
-            TOTAL_PROFIT += pnl
-
-            send(f"""✅ TP HIT
-
-💰 +${round(pnl,4)}
-💵 Total: ${round(TOTAL_PROFIT,4)}
-""")
-
-            trade_active = False
-            return
-
-        time.sleep(2)
-
-def main():
-    send("🤖 V30 FINAL BOT LIVE 💰🚀")
-
-    while True:
-        try:
-            trade()
-            time.sleep(1)
-        except Exception as e:
-            send(f"ERROR: {str(e)}")
-            time.sleep(3)
-
-if __name__ == "__main__":
-    main()
+print("🚀 V31 TRUE REAL BOT LIVE")
+scan()
