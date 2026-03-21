@@ -71,7 +71,7 @@ def place_trade(symbol, side):
         "type": "market",
         "leverage": str(LEVERAGE),
         "marginMode": "ISOLATED",
-        "size": 1
+        "size": 0.01
     })
 
     headers = sign("POST", endpoint, body)
