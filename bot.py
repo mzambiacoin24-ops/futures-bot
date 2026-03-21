@@ -6,10 +6,14 @@ import base64
 import uuid
 import json
 
+# ====== WEKA HIZI TU ======
 API_KEY = "69bd80471b35dd00017afdfb"
-API_SECRET = "
-e6c7a53e-a25c-4edc-b52e-7f28bd4df1d9"
-API_PASSPHRASE = "bot1234"
+API_SECRET = "e6c7a53e-a25c-4edc-b52e-7f28bd4df1d9"
+API_PASSPHRASE = "bot1235"
+
+TELEGRAM_TOKEN = "8787267026:AAHjMfzdg9JwVxdCo6pnoiNq2o1xvU2pC30"
+CHAT_ID = "7010983039"
+# ==========================
 
 BASE_URL = "https://api-futures.kucoin.com"
 
@@ -19,12 +23,27 @@ SYMBOLS = [
 ]
 
 LEVERAGE = 20
-MARGIN_USDT = 1.2
+SIZE = 0.01
 
 
+# ===== TELEGRAM =====
+def send_telegram(msg):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    data = {
+        "chat_id": CHAT_ID,
+        "text": msg
+    }
+    try:
+        requests.post(url, data=data)
+    except:
+        pass
+
+
+# ===== SIGN =====
 def sign(method, endpoint, body=""):
     now = str(int(time.time() * 1000))
     str_to_sign = now + method + endpoint + body
+
     signature = base64.b64encode(
         hmac.new(API_SECRET.encode(), str_to_sign.encode(), hashlib.sha256).digest()
     ).decode()
@@ -33,7 +52,7 @@ def sign(method, endpoint, body=""):
         hmac.new(API_SECRET.encode(), API_PASSPHRASE.encode(), hashlib.sha256).digest()
     ).decode()
 
-    headers = {
+    return {
         "KC-API-KEY": API_KEY,
         "KC-API-SIGN": signature,
         "KC-API-TIMESTAMP": now,
@@ -41,26 +60,22 @@ def sign(method, endpoint, body=""):
         "KC-API-KEY-VERSION": "2",
         "Content-Type": "application/json"
     }
-    return headers
 
 
+# ===== SET LEVERAGE =====
 def set_leverage(symbol):
     endpoint = "/api/v1/position/leverage"
-    url = BASE_URL + endpoint
-
     body = json.dumps({
         "symbol": symbol,
         "leverage": LEVERAGE,
         "marginMode": "ISOLATED"
     })
-
-    headers = sign("POST", endpoint, body)
-    requests.post(url, headers=headers, data=body)
+    requests.post(BASE_URL + endpoint, headers=sign("POST", endpoint, body), data=body)
 
 
+# ===== PLACE TRADE =====
 def place_trade(symbol, side):
     endpoint = "/api/v1/orders"
-    url = BASE_URL + endpoint
 
     client_oid = str(uuid.uuid4())
 
@@ -71,33 +86,37 @@ def place_trade(symbol, side):
         "type": "market",
         "leverage": str(LEVERAGE),
         "marginMode": "ISOLATED",
-        "size": 0.01
+        "size": SIZE
     })
 
-    headers = sign("POST", endpoint, body)
-    res = requests.post(url, headers=headers, data=body).json()
+    res = requests.post(BASE_URL + endpoint, headers=sign("POST", endpoint, body), data=body).json()
 
     if "code" in res and res["code"] != "200000":
-        print(f"❌ ORDER FAILED: {res}")
+        send_telegram(f"❌ ORDER FAILED\n{res}")
     else:
-        print(f"✅ REAL TRADE: {symbol} {side}")
+        send_telegram(f"🚀 TRADE START\n{symbol} {side}\n💰 Size: {SIZE}")
 
 
+# ===== GET PRICE =====
 def get_price(symbol):
-    url = BASE_URL + f"/api/v1/ticker?symbol={symbol}"
     try:
-        return float(requests.get(url).json()['data']['price'])
+        r = requests.get(BASE_URL + f"/api/v1/ticker?symbol={symbol}").json()
+        return float(r["data"]["price"])
     except:
         return None
 
 
+# ===== MAIN SCAN =====
 def scan():
+    send_telegram("🤖 BOT LIVE (REAL TRADING STARTED)")
+
     while True:
-        print("⚡ scanning fast...")
+        send_telegram("⚡ scanning market...")
+
         for symbol in SYMBOLS:
             price = get_price(symbol)
+
             if price:
-                # simple logic (scalp)
                 if price % 2 < 1:
                     set_leverage(symbol)
                     place_trade(symbol, "LONG")
@@ -107,8 +126,8 @@ def scan():
                     place_trade(symbol, "SHORT")
                     time.sleep(2)
 
-        time.sleep(1)
+        time.sleep(3)
 
 
-print("🚀 V31 TRUE REAL BOT LIVE")
+# ===== RUN =====
 scan()
