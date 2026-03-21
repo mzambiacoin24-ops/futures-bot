@@ -5,27 +5,26 @@ import hashlib
 import base64
 import json
 import uuid
-import os
 
-# ========= WEKA HIZI TU =========
+# ====== WEKA HAPA TU ======
 API_KEY = "69bd80471b35dd00017afdfb"
-API_SECRET = "e6c7a53e-a25c-4edc-b52e-7f28bd4df1d9"
+
+API_SECRET = "e6c7a53e-a25c-4edc-b52e-7f28bd4df1d9
+"
 API_PASSPHRASE = "bot1234"
 
 TELEGRAM_TOKEN = "8787267026:AAHjMfzdg9JwVxdCo6pnoiNq2o1xvU2pC30"
 CHAT_ID = "7010983039"
-# ===============================
+# ==========================
 
 BASE_URL = "https://api-futures.kucoin.com"
 
 LEVERAGE = 20
-TRADE_SIZE = 1
-CHECK_SPEED = 3
+SIZE = 1
 
-COINS = [
-    "BTCUSDTM","ETHUSDTM","SOLUSDTM",
-    "XRPUSDTM","ADAUSDTM","LINKUSDTM",
-    "AVAXUSDTM","DOGEUSDTM"
+SYMBOLS = [
+    "BTCUSDTM","ETHUSDTM","XRPUSDTM",
+    "SOLUSDTM","ADAUSDTM","LINKUSDTM"
 ]
 
 # ===== TELEGRAM =====
@@ -60,14 +59,6 @@ def sign(method, endpoint, body=""):
         "Content-Type": "application/json"
     }
 
-# ===== PRICE =====
-def get_price(symbol):
-    try:
-        r = requests.get(BASE_URL + "/api/v1/ticker", params={"symbol": symbol}).json()
-        return float(r["data"]["price"])
-    except:
-        return None
-
 # ===== LEVERAGE =====
 def set_leverage(symbol):
     endpoint = "/api/v1/position/leverage"
@@ -77,73 +68,51 @@ def set_leverage(symbol):
     })
     requests.post(BASE_URL + endpoint, headers=sign("POST", endpoint, body), data=body)
 
-# ===== ORDER =====
+# ===== TRADE =====
 def place_trade(symbol, side):
     try:
         set_leverage(symbol)
 
         endpoint = "/api/v1/orders"
+
         body = json.dumps({
             "clientOid": str(uuid.uuid4()),
             "symbol": symbol,
             "side": "buy" if side == "LONG" else "sell",
             "type": "market",
-            "size": TRADE_SIZE
+            "size": SIZE,
+            "marginMode": "CROSS"   # 🔥 HII NDIO FIX YA MWISHO
         })
 
-        res = requests.post(BASE_URL + endpoint, headers=sign("POST", endpoint, body), data=body).json()
+        res = requests.post(BASE_URL + endpoint,
+                            headers=sign("POST", endpoint, body),
+                            data=body).json()
 
         if res.get("code") == "200000":
-            send(f"""🚀 TRADE OPENED
-
-🪙 {symbol}
-📍 {side}
-⚡ Leverage: x{LEVERAGE}
-📦 Size: {TRADE_SIZE}
-""")
-            return True
+            send(f"🚀 TRADE OPENED\n{symbol} {side}")
         else:
             send(f"❌ ORDER FAILED\n{res}")
-            return False
 
     except Exception as e:
         send(f"ERROR: {str(e)}")
-        return False
 
-# ===== STRATEGY (SMART ENTRY) =====
-def find_entry():
-    for coin in COINS:
-        p1 = get_price(coin)
-        time.sleep(0.3)
-        p2 = get_price(coin)
-
-        if None in [p1, p2]:
-            continue
-
-        move = (p2 - p1) / p1
-
-        if move > 0.0003:
-            return coin, "LONG"
-        elif move < -0.0003:
-            return coin, "SHORT"
-
-    return None, None
+# ===== SIMPLE SCAN =====
+def scan():
+    import random
+    return random.choice(SYMBOLS), random.choice(["LONG","SHORT"])
 
 # ===== MAIN =====
-send("🤖 BOT LIVE (CROSS + AUTO LEVERAGE)")
+send("🤖 BOT LIVE (FINAL FIXED)")
 
 while True:
     try:
         send("⚡ scanning market...")
 
-        symbol, side = find_entry()
+        symbol, side = scan()
 
-        if symbol:
-            place_trade(symbol, side)
-        else:
-            send("⏳ no entry")
+        place_trade(symbol, side)
 
-        time.sleep(CHECK_SPEED)
+        time.sleep(8)
 
     except Exception as e:
         send(f"LOOP ERROR: {str(e)}")
