@@ -92,7 +92,7 @@ def get_position(symbol):
 
     return None
 
-# ✅ FIXED ORDER (clientOid added)
+# ✅ FINAL ORDER FIX
 def place_order(symbol, side, size):
     endpoint = "/api/v1/orders"
 
@@ -102,7 +102,8 @@ def place_order(symbol, side, size):
         "side": side,
         "type": "market",
         "size": size,
-        "leverage": str(LEVERAGE)
+        "leverage": str(LEVERAGE),
+        "marginMode": "ISOLATED"   # 🔥 FIX YA MWISHO
     }
 
     body_str = json.dumps(body)
@@ -225,7 +226,7 @@ def trade():
         time.sleep(2)
 
 def main():
-    send("🤖 V28 FINAL REAL BOT LIVE 💰")
+    send("🤖 V30 FINAL BOT LIVE 💰🚀")
 
     while True:
         try:
