@@ -49,6 +49,15 @@ def get_price():
     url = f"{BASE_URL}/api/v1/ticker?symbol={SYMBOL}"
     return float(requests.get(url).json()['data']['price'])
 
+# ====== CHECK POSITION ======
+def has_position():
+    endpoint = f"/api/v1/positions?symbol={SYMBOL}"
+    res = requests.get(BASE_URL + endpoint, headers=sign("GET", endpoint)).json()
+
+    if res.get("data"):
+        return True
+    return False
+
 # ====== SET LEVERAGE ======
 def set_leverage():
     endpoint = "/api/v1/position/risk-limit-level/change"
@@ -86,7 +95,7 @@ def open_trade(side):
 
     requests.post(BASE_URL + endpoint, headers=sign("POST", endpoint, body), data=body)
 
-    # ====== TELEGRAM FORMAT ======
+    # TELEGRAM
     msg = f"""
 🚀 TRADE OPENED
 
@@ -96,11 +105,16 @@ def open_trade(side):
 💰 Entry: {price:.5f}
 🎯 TP: {tp:.5f}
 🛑 SL: {sl:.5f}
+
+👉 Weka manual KuCoin
 """
     send(msg)
 
 # ====== STRATEGY ======
 def strategy():
+    if has_position():
+        return  # ZUIA SPAM
+
     price = get_price()
 
     if int(price * 1000) % 2 == 0:
@@ -109,7 +123,7 @@ def strategy():
         open_trade("SHORT")
 
 # ====== START ======
-send("🤖 BOT LIVE (MANUAL TP/SL MODE)")
+send("🤖 BOT LIVE (NO SPAM MODE)")
 
 while True:
     strategy()
