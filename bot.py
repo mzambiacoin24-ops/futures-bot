@@ -23,9 +23,6 @@ SIZE = "1"
 
 SYMBOLS = ["ADAUSDTM"]
     
-    
-]
-
 # ===== TELEGRAM =====
 def send(msg):
     try:
