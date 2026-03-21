@@ -118,7 +118,7 @@ def open_trade(side):
 
 # ====== TP/SL REAL ======
 def set_tp_sl(side, tp, sl):
-    endpoint = "/api/v1/st-orders"
+    endpoint = "/api/v1/stopOrders"
 
     # TP
     body_tp = json.dumps({
