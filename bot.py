@@ -75,7 +75,19 @@ def place_trade(symbol, side):
             "clientOid": str(uuid.uuid4()),
             "symbol": symbol,
             "side": "buy" if side == "LONG" else "sell",
-            "type": "market",
+            "type": def has_open_position(symbol):
+    try:
+        endpoint = "/api/v1/positions"
+        res = requests.get(BASE_URL + endpoint, headers=get_headers("GET", endpoint, ""))
+        data = res.json()
+
+        if "data" in data:
+            for pos in data["data"]:
+                if pos["symbol"] == symbol and float(pos["currentQty"]) != 0:
+                    return True
+        return False
+    except:
+        return False"market",
             "size": SIZE,
             "marginMode": "CROSS"   # 🔥 HII NDIO FIX YA MWISHO
         })
