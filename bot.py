@@ -68,7 +68,7 @@ def set_leverage(symbol):
     body = json.dumps({
         "symbol": symbol,
         "leverage": LEVERAGE,
-        "marginMode": "ISOLATED"
+        
     })
     requests.post(BASE_URL + endpoint, headers=sign("POST", endpoint, body), data=body)
 
