@@ -21,9 +21,9 @@ BASE_URL = "https://api-futures.kucoin.com"
 LEVERAGE = 5
 SIZE = "1"
 
-SYMBOLS = [
-    "BTCUSDTM","ETHUSDTM","XRPUSDTM",
-    "SOLUSDTM","ADAUSDTM","LINKUSDTM"
+SYMBOLS = ["ADAUSDTM"]
+    
+    
 ]
 
 # ===== TELEGRAM =====
