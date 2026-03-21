@@ -1,6 +1,6 @@
 import requests, time, hashlib, hmac, base64, json, uuid, os
 
-# ====== WEKA HIZI TU ======
+# ====== KEYS ======
 API_KEY = os.getenv("KUCOIN_KEY")
 API_SECRET = os.getenv("KUCOIN_SECRET")
 API_PASSPHRASE = os.getenv("KUCOIN_PASSPHRASE")
@@ -17,9 +17,6 @@ TP_PERCENT = 0.005
 SL_PERCENT = 0.003
 
 BASE_URL = "https://api-futures.kucoin.com"
-
-has_long = False
-has_short = False
 
 # ====== TELEGRAM ======
 def send(msg):
@@ -63,18 +60,17 @@ def set_leverage():
 
 # ====== OPEN TRADE ======
 def open_trade(side):
-    global has_long, has_short
-
-    if side == "LONG" and has_long:
-        return
-    if side == "SHORT" and has_short:
-        return
-
     set_leverage()
 
     price = get_price()
-    tp = price * (1 + TP_PERCENT) if side == "LONG" else price * (1 - TP_PERCENT)
-    sl = price * (1 - SL_PERCENT) if side == "LONG" else price * (1 + SL_PERCENT)
+
+    # CALCULATE TP / SL
+    if side == "LONG":
+        tp = price * (1 + TP_PERCENT)
+        sl = price * (1 - SL_PERCENT)
+    else:
+        tp = price * (1 - TP_PERCENT)
+        sl = price * (1 + SL_PERCENT)
 
     endpoint = "/api/v1/orders"
 
@@ -90,63 +86,20 @@ def open_trade(side):
 
     requests.post(BASE_URL + endpoint, headers=sign("POST", endpoint, body), data=body)
 
-    # ====== MANUAL TP/SL LOGIC ======
-    monitor_trade(side, tp, sl)
-
+    # ====== TELEGRAM FORMAT ======
     msg = f"""
 🚀 TRADE OPENED
-{SYMBOL}
-{side}
 
-Entry: {price:.5f}
-TP: {tp:.5f}
-SL: {sl:.5f}
+📊 Pair: {SYMBOL}
+📌 Side: {side}
+
+💰 Entry: {price:.5f}
+🎯 TP: {tp:.5f}
+🛑 SL: {sl:.5f}
 """
     send(msg)
 
-    if side == "LONG":
-        has_long = True
-    else:
-        has_short = True
-
-# ====== MONITOR TP/SL ======
-def monitor_trade(side, tp, sl):
-    global has_long, has_short
-
-    while True:
-        price = get_price()
-
-        if side == "LONG":
-            if price >= tp or price <= sl:
-                close_position("LONG")
-                has_long = False
-                break
-        else:
-            if price <= tp or price >= sl:
-                close_position("SHORT")
-                has_short = False
-                break
-
-        time.sleep(3)
-
-# ====== CLOSE ======
-def close_position(side):
-    endpoint = "/api/v1/orders"
-    body = json.dumps({
-        "clientOid": str(uuid.uuid4()),
-        "symbol": SYMBOL,
-        "side": "sell" if side == "LONG" else "buy",
-        "type": "market",
-        "size": SIZE,
-        "marginMode": "cross",
-        "positionSide": side
-    })
-
-    requests.post(BASE_URL + endpoint, headers=sign("POST", endpoint, body), data=body)
-
-    send(f"✅ CLOSED {side}")
-
-# ====== SIMPLE STRATEGY ======
+# ====== STRATEGY ======
 def strategy():
     price = get_price()
 
@@ -155,9 +108,9 @@ def strategy():
     else:
         open_trade("SHORT")
 
-# ====== LOOP ======
-send("🤖 BOT LIVE (SMART + HEDGE + TP/SL)")
+# ====== START ======
+send("🤖 BOT LIVE (MANUAL TP/SL MODE)")
 
 while True:
     strategy()
-    time.sleep(10)
+    time.sleep(15)
