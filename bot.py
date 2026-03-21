@@ -1,43 +1,28 @@
-import requests
-import time
-import hmac
-import hashlib
-import base64
-import json
-import uuid
+import requests, time, json, hmac, hashlib, base64, uuid
 
-# ====== WEKA HAPA TU ======
+# ===== WEKA HAPA KEYS ZAKO =====
 API_KEY = "69bd80471b35dd00017afdfb"
-
 API_SECRET = "e6c7a53e-a25c-4edc-b52e-7f28bd4df1d9"
 API_PASSPHRASE = "bot1234"
 
 TELEGRAM_TOKEN = "8787267026:AAHjMfzdg9JwVxdCo6pnoiNq2o1xvU2pC30"
 CHAT_ID = "7010983039"
-# ==========================
 
 BASE_URL = "https://api-futures.kucoin.com"
 
 LEVERAGE = 5
 SIZE = "1"
-
 SYMBOLS = ["ADAUSDTM"]
-    
+
 # ===== TELEGRAM =====
-def send(msg):
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg}
-        )
-    except:
-        pass
+def send_telegram(msg):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
 # ===== SIGN =====
-def sign(method, endpoint, body=""):
-    now = str(int(time.time()*1000))
+def get_headers(method, endpoint, body=""):
+    now = str(int(time.time() * 1000))
     str_to_sign = now + method + endpoint + body
-
     signature = base64.b64encode(
         hmac.new(API_SECRET.encode(), str_to_sign.encode(), hashlib.sha256).digest()
     ).decode()
@@ -55,73 +40,66 @@ def sign(method, endpoint, body=""):
         "Content-Type": "application/json"
     }
 
-# ===== LEVERAGE =====
+# ===== CHECK POSITION =====
+def has_open_position(symbol):
+    endpoint = "/api/v1/positions"
+    res = requests.get(BASE_URL + endpoint, headers=get_headers("GET", endpoint, ""))
+    data = res.json()
+
+    if "data" in data:
+        for pos in data["data"]:
+            if pos["symbol"] == symbol and float(pos["currentQty"]) != 0:
+                return True
+    return False
+
+# ===== SET LEVERAGE =====
 def set_leverage(symbol):
     endpoint = "/api/v1/position/leverage"
     body = json.dumps({
         "symbol": symbol,
         "leverage": str(LEVERAGE)
     })
-    requests.post(BASE_URL + endpoint, headers=sign("POST", endpoint, body), data=body)
+    requests.post(BASE_URL + endpoint, headers=get_headers("POST", endpoint, body), data=body)
 
-# ===== TRADE =====
+# ===== PLACE TRADE =====
 def place_trade(symbol, side):
-    try:
-        set_leverage(symbol)
+    if has_open_position(symbol):
+        send_telegram("⏳ Ninasubiri position ifungwe...")
+        return
 
-        endpoint = "/api/v1/orders"
+    set_leverage(symbol)
 
-        body = json.dumps({
-            "clientOid": str(uuid.uuid4()),
-            "symbol": symbol,
-            "side": "buy" if side == "LONG" else "sell",
-            "type": def has_open_position(symbol):
-    try:
-        endpoint = "/api/v1/positions"
-        res = requests.get(BASE_URL + endpoint, headers=get_headers("GET", endpoint, ""))
-        data = res.json()
+    endpoint = "/api/v1/orders"
+    body = json.dumps({
+        "clientOid": str(uuid.uuid4()),
+        "symbol": symbol,
+        "side": "buy" if side == "LONG" else "sell",
+        "type": "market",
+        "size": SIZE,
+        "marginMode": "CROSS"
+    })
 
-        if "data" in data:
-            for pos in data["data"]:
-                if pos["symbol"] == symbol and float(pos["currentQty"]) != 0:
-                    return True
-        return False
-    except:
-        return False"market",
-            "size": SIZE,
-            "marginMode": "CROSS"   # 🔥 HII NDIO FIX YA MWISHO
-        })
+    res = requests.post(BASE_URL + endpoint, headers=get_headers("POST", endpoint, body), data=body)
+    data = res.json()
 
-        res = requests.post(BASE_URL + endpoint,
-                            headers=sign("POST", endpoint, body),
-                            data=body).json()
+    if "code" in data and data["code"] == "200000":
+        send_telegram(f"🚀 TRADE OPENED {symbol} {side}")
+    else:
+        send_telegram(f"❌ {data}")
 
-        if res.get("code") == "200000":
-            send(f"🚀 TRADE OPENED\n{symbol} {side}")
-        else:
-            send(f"❌ ORDER FAILED\n{res}")
+# ===== SIMPLE STRATEGY =====
+def get_signal():
+    return "LONG" if int(time.time()) % 2 == 0 else "SHORT"
 
-    except Exception as e:
-        send(f"ERROR: {str(e)}")
-
-# ===== SIMPLE SCAN =====
-def scan():
-    import random
-    return random.choice(SYMBOLS), random.choice(["LONG","SHORT"])
-
-# ===== MAIN =====
-send("🤖 BOT LIVE (FINAL FIXED)")
+# ===== MAIN LOOP =====
+send_telegram("🤖 BOT LIVE (1 TRADE MODE)")
 
 while True:
     try:
-        send("⚡ scanning market...")
-
-        symbol, side = scan()
-
-        place_trade(symbol, side)
-
-        time.sleep(8)
-
+        for symbol in SYMBOLS:
+            side = get_signal()
+            place_trade(symbol, side)
+        time.sleep(30)
     except Exception as e:
-        send(f"LOOP ERROR: {str(e)}")
-        time.sleep(5)
+        send_telegram(f"ERROR: {str(e)}")
+        time.sleep(10)
