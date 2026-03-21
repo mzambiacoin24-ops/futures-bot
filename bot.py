@@ -18,8 +18,8 @@ CHAT_ID = "7010983039"
 
 BASE_URL = "https://api-futures.kucoin.com"
 
-LEVERAGE = 20
-SIZE = 1
+LEVERAGE = 5
+SIZE = 0.01
 
 SYMBOLS = [
     "BTCUSDTM","ETHUSDTM","XRPUSDTM",
