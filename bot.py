@@ -17,24 +17,30 @@ CHAT_ID = "7010983039"
 
 BASE_URL = "https://api-futures.kucoin.com"
 
-SYMBOL = "ADAUSDTM"     # coin moja tu
+SYMBOL = "ADAUSDTM"
 LEVERAGE = 5
 SIZE = "1"
-TAKE_PROFIT = 0.2       # profit ya haraka (badilisha 0.1–0.5)
+
+TP_DIFF = 0.0015   # balanced profit
+SL_DIFF = 0.0012   # risk control
+
+COOLDOWN = 60  # sekunde 60
 
 # ==============================
-# 📩 TELEGRAM
+# TELEGRAM
 # ==============================
 
-def send_telegram(msg):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+def send(msg):
+    requests.post(
+        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+        data={"chat_id": CHAT_ID, "text": msg}
+    )
 
 # ==============================
-# 🔐 SIGNATURE
+# SIGN
 # ==============================
 
-def get_headers(method, endpoint, body=""):
+def headers(method, endpoint, body=""):
     now = str(int(time.time() * 1000))
     str_to_sign = now + method + endpoint + body
 
@@ -56,48 +62,54 @@ def get_headers(method, endpoint, body=""):
     }
 
 # ==============================
-# 📊 ANGALIA POSITION
+# PRICE
+# ==============================
+
+def get_price():
+    r = requests.get(BASE_URL + "/api/v1/ticker", params={"symbol": SYMBOL}).json()
+    return float(r["data"]["price"])
+
+# ==============================
+# POSITION
 # ==============================
 
 def get_position():
-    endpoint = "/api/v1/positions"
-    res = requests.get(BASE_URL + endpoint, headers=get_headers("GET", endpoint, ""))
-    data = res.json()
-
-    if "data" in data:
-        for pos in data["data"]:
-            if pos["symbol"] == SYMBOL and float(pos["currentQty"]) != 0:
-                return pos
+    r = requests.get(BASE_URL + "/api/v1/positions", headers=headers("GET","/api/v1/positions")).json()
+    for p in r.get("data", []):
+        if p["symbol"] == SYMBOL and float(p["currentQty"]) != 0:
+            return p
     return None
 
 # ==============================
-# ⚡ SET LEVERAGE
+# LEVERAGE
 # ==============================
 
 def set_leverage():
     endpoint = "/api/v1/position/leverage"
-    body = json.dumps({
-        "symbol": SYMBOL,
-        "leverage": str(LEVERAGE)
-    })
-
-    requests.post(BASE_URL + endpoint,
-        headers=get_headers("POST", endpoint, body),
-        data=body
-    )
+    body = json.dumps({"symbol": SYMBOL, "leverage": str(LEVERAGE)})
+    requests.post(BASE_URL+endpoint, headers=headers("POST",endpoint,body), data=body)
 
 # ==============================
-# 🚀 OPEN TRADE
+# OPEN TRADE
 # ==============================
 
 def open_trade(side):
     if get_position():
-        send_telegram("⏳ Ninasubiri trade ifungwe...")
-        return
+        return None
 
     set_leverage()
 
+    entry = get_price()
+
+    if side == "LONG":
+        tp = entry + TP_DIFF
+        sl = entry - SL_DIFF
+    else:
+        tp = entry - TP_DIFF
+        sl = entry + SL_DIFF
+
     endpoint = "/api/v1/orders"
+
     body = json.dumps({
         "clientOid": str(uuid.uuid4()),
         "symbol": SYMBOL,
@@ -107,22 +119,28 @@ def open_trade(side):
         "marginMode": "CROSS"
     })
 
-    res = requests.post(BASE_URL + endpoint,
-        headers=get_headers("POST", endpoint, body),
-        data=body
-    )
+    res = requests.post(BASE_URL+endpoint, headers=headers("POST",endpoint,body), data=body).json()
 
-    data = res.json()
+    if res.get("code") == "200000":
+        send(f"""🚀 TRADE OPENED
 
-    if data.get("code") == "200000":
-        send_telegram(f"🚀 TRADE OPENED {SYMBOL} {side}")
-        return side
+🪙 {SYMBOL}
+📍 Direction: {side}
+📊 Entry: {round(entry,6)}
+
+🎯 TP: {round(tp,6)}
+🛑 SL: {round(sl,6)}
+
+⚡ Leverage: x{LEVERAGE}
+""")
+        return side, entry, tp, sl
+
     else:
-        send_telegram(f"❌ {data}")
+        send(f"❌ {res}")
         return None
 
 # ==============================
-# 💰 CLOSE TRADE
+# CLOSE
 # ==============================
 
 def close_trade(side):
@@ -139,46 +157,56 @@ def close_trade(side):
         "reduceOnly": True
     })
 
-    requests.post(BASE_URL + endpoint,
-        headers=get_headers("POST", endpoint, body),
-        data=body
-    )
-
-    send_telegram(f"💰 POSITION CLOSED {SYMBOL}")
+    requests.post(BASE_URL+endpoint, headers=headers("POST",endpoint,body), data=body)
 
 # ==============================
-# 📈 SIGNAL (simple)
+# SIGNAL
 # ==============================
 
-def get_signal():
+def signal():
     return "LONG" if int(time.time()) % 2 == 0 else "SHORT"
 
 # ==============================
-# 🔁 MAIN LOOP
+# MAIN
 # ==============================
 
-send_telegram("🤖 BOT LIVE (AUTO PROFIT)")
+send("🤖 BOT LIVE (FINAL MODE)")
 
-current_side = None
+current = None
 
 while True:
     try:
         pos = get_position()
 
-        if pos:
-            pnl = float(pos["unrealisedPnl"])
+        if pos and current:
+            price = get_price()
 
-            if pnl >= TAKE_PROFIT:
-                send_telegram(f"🎯 PROFIT: {pnl} USDT")
-                close_trade(current_side)
-                current_side = None
+            side, entry, tp, sl = current
 
-        else:
-            side = get_signal()
-            current_side = open_trade(side)
+            if (side == "LONG" and (price >= tp or price <= sl)) or \
+               (side == "SHORT" and (price <= tp or price >= sl)):
 
-        time.sleep(15)
+                close_trade(side)
+
+                pnl = float(pos["unrealisedPnl"])
+
+                send(f"""💰 TRADE CLOSED
+
+🪙 {SYMBOL}
+📊 Exit: {round(price,6)}
+
+💵 Result: {round(pnl,3)} USDT
+""")
+
+                current = None
+                time.sleep(COOLDOWN)
+
+        elif not pos:
+            side = signal()
+            current = open_trade(side)
+
+        time.sleep(10)
 
     except Exception as e:
-        send_telegram(f"ERROR: {str(e)}")
-        time.sleep(10)
+        send(f"ERROR: {str(e)}")
+        time.sleep(5)
